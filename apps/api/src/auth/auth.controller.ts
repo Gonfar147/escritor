@@ -16,13 +16,18 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard';
 
 const REFRESH_COOKIE = 'refresh_token';
 const isProd = process.env.NODE_ENV === 'production';
-const REFRESH_COOKIE_OPTS = {
+const REFRESH_COOKIE_OPTS: {
+  httpOnly: boolean;
+  secure: boolean;
+  sameSite: 'none' | 'lax';
+  path: string;
+} = {
   httpOnly: true,
   secure: isProd,
   // En producción, front y back viven en dominios distintos (ej. Render),
   // así que la cookie tiene que ser cross-site: 'none' + secure. En local
   // ambos son http://localhost y 'lax' alcanza (y evita requerir HTTPS).
-  sameSite: (isProd ? 'none' : 'lax') as const,
+  sameSite: isProd ? 'none' : 'lax',
   path: '/api/v1/auth',
 };
 
