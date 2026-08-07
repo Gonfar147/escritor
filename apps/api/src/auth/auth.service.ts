@@ -1,124 +1,130 @@
 import {
-  Body,
-  Controller,
-  Get,
-  Post,
-  Req,
-  Res,
-  UseGuards,
+  ConflictException,
+  Injectable,
+  UnauthorizedException,
 } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
-import type { Request, Response } from 'express';
-import { AuthService } from './auth.service';
+import { JwtService } from '@nestjs/jwt';
+import * as argon2 from 'argon2';
+import { PrismaService } from '../prisma/prisma.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
-import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { AuthProvider } from '@prisma/client';
 
-const REFRESH_COOKIE = 'refresh_token';
-const isProd = process.env.NODE_ENV === 'production';
-const REFRESH_COOKIE_OPTS: {
-  httpOnly: boolean;
-  secure: boolean;
-  sameSite: 'none' | 'lax';
-  path: string;
-} = {
-  httpOnly: true,
-  secure: isProd,
-  // En producción, front y back viven en dominios distintos (ej. Render),
-  // así que la cookie tiene que ser cross-site: 'none' + secure. En local
-  // ambos son http://localhost y 'lax' alcanza (y evita requerir HTTPS).
-  sameSite: isProd ? 'none' : 'lax',
-  path: '/api/v1/auth',
-};
+interface TokenPair {
+  accessToken: string;
+  refreshToken: string;
+}
 
-@Controller('auth')
-export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+@Injectable()
+export class AuthService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly jwt: JwtService,
+  ) {}
 
-  @Post('register')
-  async register(@Body() dto: RegisterDto, @Res({ passthrough: true }) res: Response) {
-    const tokens = await this.authService.register(dto);
-    res.cookie(REFRESH_COOKIE, tokens.refreshToken, REFRESH_COOKIE_OPTS);
-    return { accessToken: tokens.accessToken };
-  }
-
-  @Post('login')
-  async login(@Body() dto: LoginDto, @Res({ passthrough: true }) res: Response) {
-    const tokens = await this.authService.login(dto);
-    res.cookie(REFRESH_COOKIE, tokens.refreshToken, REFRESH_COOKIE_OPTS);
-    return { accessToken: tokens.accessToken };
-  }
-
-  @Post('refresh')
-  async refresh(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
-    const refreshToken = req.cookies?.[REFRESH_COOKIE];
-    // El userId debería venir de un JWT de refresh ya decodificado por un guard dedicado;
-    // simplificado acá para el MVP.
-    const payload = JSON.parse(
-      Buffer.from(refreshToken.split('.')[1], 'base64').toString(),
-    );
-    const tokens = await this.authService.refresh(payload.sub, refreshToken);
-    res.cookie(REFRESH_COOKIE, tokens.refreshToken, REFRESH_COOKIE_OPTS);
-    return { accessToken: tokens.accessToken };
-  }
-
-  @UseGuards(JwtAuthGuard)
-  @Post('logout')
-  async logout(@Req() req: any, @Res({ passthrough: true }) res: Response) {
-    await this.authService.logout(req.user.userId);
-    res.clearCookie(REFRESH_COOKIE, REFRESH_COOKIE_OPTS);
-    return { success: true };
-  }
-
-  // ---- OAuth: Google ----
-  @Get('google')
-  @UseGuards(AuthGuard('google'))
-  async googleAuth() {
-    // Passport redirige a Google automáticamente
-  }
-
-  @Get('google/callback')
-  @UseGuards(AuthGuard('google'))
-  async googleCallback(@Req() req: any, @Res({ passthrough: true }) res: Response) {
-    return this.handleOAuthCallback(req, res, 'GOOGLE');
-  }
-
-  // ---- OAuth: GitHub ----
-  @Get('github')
-  @UseGuards(AuthGuard('github'))
-  async githubAuth() {}
-
-  @Get('github/callback')
-  @UseGuards(AuthGuard('github'))
-  async githubCallback(@Req() req: any, @Res({ passthrough: true }) res: Response) {
-    return this.handleOAuthCallback(req, res, 'GITHUB');
-  }
-
-  // ---- OAuth: Microsoft ----
-  @Get('microsoft')
-  @UseGuards(AuthGuard('microsoft'))
-  async microsoftAuth() {}
-
-  @Get('microsoft/callback')
-  @UseGuards(AuthGuard('microsoft'))
-  async microsoftCallback(@Req() req: any, @Res({ passthrough: true }) res: Response) {
-    return this.handleOAuthCallback(req, res, 'MICROSOFT');
-  }
-
-  private async handleOAuthCallback(
-    req: any,
-    res: Response,
-    provider: 'GOOGLE' | 'GITHUB' | 'MICROSOFT',
-  ) {
-    const tokens = await this.authService.findOrCreateOAuthUser({
-      email: req.user.email,
-      name: req.user.name,
-      avatarUrl: req.user.avatarUrl,
-      provider: provider as any,
-      providerId: req.user.providerId,
+  async register(dto: RegisterDto) {
+    const existing = await this.prisma.user.findUnique({
+      where: { email: dto.email },
     });
-    res.cookie(REFRESH_COOKIE, tokens.refreshToken, REFRESH_COOKIE_OPTS);
-    // Redirige al frontend con el access token en el fragmento de la URL
-    res.redirect(`${process.env.WEB_URL}/auth/callback#token=${tokens.accessToken}`);
+    if (existing) {
+      throw new ConflictException('Ya existe una cuenta con ese email');
+    }
+
+    const passwordHash = await argon2.hash(dto.password);
+
+    const user = await this.prisma.user.create({
+      data: {
+        email: dto.email,
+        passwordHash,
+        name: dto.name,
+        provider: AuthProvider.EMAIL,
+      },
+    });
+
+    return this.issueTokens(user.id, user.email);
+  }
+
+  async login(dto: LoginDto) {
+    const user = await this.prisma.user.findUnique({
+      where: { email: dto.email },
+    });
+
+    if (!user || !user.passwordHash) {
+      throw new UnauthorizedException('Credenciales inválidas');
+    }
+
+    const valid = await argon2.verify(user.passwordHash, dto.password);
+    if (!valid) {
+      throw new UnauthorizedException('Credenciales inválidas');
+    }
+
+    return this.issueTokens(user.id, user.email);
+  }
+
+  async refresh(userId: string, providedRefreshToken: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user?.refreshToken) {
+      throw new UnauthorizedException('Sesión inválida');
+    }
+
+    const matches = await argon2.verify(user.refreshToken, providedRefreshToken);
+    if (!matches) {
+      throw new UnauthorizedException('Sesión inválida');
+    }
+
+    return this.issueTokens(user.id, user.email);
+  }
+
+  async logout(userId: string) {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { refreshToken: null },
+    });
+  }
+
+  /** Usado por las estrategias OAuth para crear o recuperar el usuario */
+  async findOrCreateOAuthUser(params: {
+    email: string;
+    name: string;
+    avatarUrl?: string;
+    provider: AuthProvider;
+    providerId: string;
+  }) {
+    let user = await this.prisma.user.findUnique({
+      where: { email: params.email },
+    });
+
+    if (!user) {
+      user = await this.prisma.user.create({
+        data: {
+          email: params.email,
+          name: params.name,
+          avatarUrl: params.avatarUrl,
+          provider: params.provider,
+          providerId: params.providerId,
+        },
+      });
+    }
+
+    return this.issueTokens(user.id, user.email);
+  }
+
+  private async issueTokens(userId: string, email: string): Promise<TokenPair> {
+    const accessToken = this.jwt.sign(
+      { sub: userId, email },
+      { expiresIn: '15m' },
+    );
+    const refreshToken = this.jwt.sign(
+      { sub: userId, type: 'refresh' },
+      { expiresIn: '7d' },
+    );
+
+    const refreshTokenHash = await argon2.hash(refreshToken);
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { refreshToken: refreshTokenHash },
+    });
+
+    return { accessToken, refreshToken };
   }
 }
