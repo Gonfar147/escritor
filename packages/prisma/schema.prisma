@@ -1,0 +1,649 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============ AUTH / USERS ============
+
+enum AuthProvider {
+  EMAIL
+  GOOGLE
+  GITHUB
+  MICROSOFT
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String?
+  name         String
+  avatarUrl    String?
+  provider     AuthProvider @default(EMAIL)
+  providerId   String?
+  refreshToken String?  // hash del último refresh token válido
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  memberships  ProjectMember[]
+
+  @@index([email])
+}
+
+// ============ PROJECTS ============
+
+enum ProjectStatus {
+  DRAFT
+  IN_PROGRESS
+  REVISION
+  COMPLETED
+  PUBLISHED
+  ARCHIVED
+}
+
+enum ProjectRole {
+  OWNER
+  COAUTHOR
+  EDITOR
+  PROOFREADER
+  BETA_READER
+}
+
+model Project {
+  id          String        @id @default(cuid())
+  title       String
+  subtitle    String?
+  coverUrl    String?
+  language    String        @default("es")
+  genre       String?
+  subgenre    String?
+  status      ProjectStatus @default(DRAFT)
+  synopsis    String?
+  pitch       String?
+  wordGoal    Int?
+  startDate   DateTime?
+  targetDate  DateTime?
+  color       String?
+  icon        String?
+  templateId  String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  members     ProjectMember[]
+  parts       Part[]
+  tags        Tag[]
+  notes       Note[]
+  characters  Character[]
+  locations   Location[]
+  objects     StoryObject[]
+  worldEntries WorldEntry[]
+  timelineEvents TimelineEvent[]
+  mapAssets   MapAsset[]
+  researchItems ResearchItem[]
+
+  @@index([updatedAt])
+}
+
+model ProjectMember {
+  id        String      @id @default(cuid())
+  projectId String
+  userId    String
+  role      ProjectRole @default(COAUTHOR)
+  invitedAt DateTime    @default(now())
+
+  project   Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+}
+
+// ============ STRUCTURE: PART > CHAPTER > SCENE ============
+
+enum SceneStatus {
+  DRAFT
+  IN_PROGRESS
+  REVIEW
+  DONE
+}
+
+model Part {
+  id        String    @id @default(cuid())
+  projectId String
+  title     String
+  order     Int
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  chapters  Chapter[]
+
+  @@index([projectId, order])
+}
+
+model Chapter {
+  id        String      @id @default(cuid())
+  partId    String
+  title     String
+  order     Int
+  status    SceneStatus @default(DRAFT)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  part      Part        @relation(fields: [partId], references: [id], onDelete: Cascade)
+  scenes    Scene[]
+
+  @@index([partId, order])
+}
+
+model Scene {
+  id         String        @id @default(cuid())
+  chapterId  String
+  title      String
+  order      Int
+  content    Json          @default("{}")
+  wordCount  Int           @default(0)
+  status     SceneStatus   @default(DRAFT)
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  chapter    Chapter       @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  versions   SceneVersion[]
+
+  characterAppearances SceneCharacter[]
+  locationAppearances  SceneLocation[]
+  objectAppearances    SceneObject[]
+  timelineEvents       EventScene[]
+  characterMovements   CharacterMovement[]
+
+  @@index([chapterId, order])
+}
+
+model SceneVersion {
+  id        String   @id @default(cuid())
+  sceneId   String
+  content   Json
+  wordCount Int      @default(0)
+  createdAt DateTime @default(now())
+
+  scene     Scene    @relation(fields: [sceneId], references: [id], onDelete: Cascade)
+
+  @@index([sceneId, createdAt])
+}
+
+// ============ SUPPORT ============
+
+model Tag {
+  id        String  @id @default(cuid())
+  projectId String
+  name      String
+  color     String?
+
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, name])
+}
+
+model Note {
+  id        String   @id @default(cuid())
+  projectId String
+  title     String
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+// ============ MÓDULO 5 — PERSONAJES ============
+
+enum CharacterStatus {
+  ALIVE
+  DEAD
+  MISSING
+  UNKNOWN
+}
+
+enum CharacterRelationType {
+  FAMILY
+  ALLY
+  ENEMY
+  MENTOR
+  PARTNER
+  OTHER
+}
+
+model Character {
+  id             String          @id @default(cuid())
+  projectId      String
+
+  // Información general
+  name           String
+  aliases        String[]        @default([])
+  age            Int?
+  birthDate      DateTime?
+  sex            String?
+  pronouns       String?
+  heightCm       Int?
+  weightKg       Int?
+  profession     String?
+
+  // Apariencia
+  appearance     String?
+  photoUrl       String?
+  inspiration    String?
+  colors         String[]        @default([])
+  symbols        String[]        @default([])
+
+  // Personalidad y arco narrativo
+  virtues        String[]        @default([])
+  flaws          String[]        @default([])
+  traumas        String?
+  goals          String?
+  motivations    String?
+  fears          String?
+  conflicts      String?
+  arc            String?
+  secrets        String?
+  lies           String?
+  typicalPhrases String[]        @default([])
+
+  status         CharacterStatus @default(ALIVE)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  project        Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  relationsFrom  CharacterRelationship[] @relation("RelationFrom")
+  relationsTo    CharacterRelationship[] @relation("RelationTo")
+  sceneAppearances SceneCharacter[]
+  ownedObjects   StoryObject[]
+  eventAppearances EventCharacter[]
+  mapPins        MapPin[]
+  movements      CharacterMovement[]
+
+  @@index([projectId, name])
+}
+
+// Relaciones entre personajes: familia, aliados, enemigos, mentores, parejas
+model CharacterRelationship {
+  id                 String   @id @default(cuid())
+  characterId        String
+  relatedCharacterId String
+  type               CharacterRelationType
+  description        String?
+  createdAt          DateTime @default(now())
+
+  character        Character @relation("RelationFrom", fields: [characterId], references: [id], onDelete: Cascade)
+  relatedCharacter Character @relation("RelationTo", fields: [relatedCharacterId], references: [id], onDelete: Cascade)
+
+  @@unique([characterId, relatedCharacterId, type])
+}
+
+// ============ MÓDULO 6 — LUGARES ============
+
+model Location {
+  id        String   @id @default(cuid())
+  projectId String
+
+  name      String
+  history   String?
+  geography String?
+  climate   String?
+  photos    String[] @default([])
+  maps      String[] @default([])
+  notes     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  sceneAppearances SceneLocation[]
+  objects          StoryObject[]
+  events           TimelineEvent[]
+  mapPins          MapPin[]
+
+  @@index([projectId, name])
+}
+
+// ============ MÓDULO 7 — OBJETOS ============
+
+model StoryObject {
+  id          String   @id @default(cuid())
+  projectId   String
+
+  name        String
+  description String?
+  history     String?
+  importance  String?
+
+  ownerCharacterId String?
+  locationId       String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  owner       Character? @relation(fields: [ownerCharacterId], references: [id], onDelete: SetNull)
+  location    Location?  @relation(fields: [locationId], references: [id], onDelete: SetNull)
+
+  sceneAppearances SceneObject[]
+
+  @@index([projectId, name])
+}
+
+// ============ TABLAS DE APARICIÓN EN ESCENA (many-to-many) ============
+// Sostienen "escenas donde aparece X", "capítulos donde aparece X", grafo de
+// relaciones (Módulo 13) y búsqueda semántica con contexto (Módulo 14/12).
+
+model SceneCharacter {
+  id          String @id @default(cuid())
+  sceneId     String
+  characterId String
+
+  scene       Scene     @relation(fields: [sceneId], references: [id], onDelete: Cascade)
+  character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@unique([sceneId, characterId])
+  @@index([characterId])
+}
+
+model SceneLocation {
+  id         String @id @default(cuid())
+  sceneId    String
+  locationId String
+
+  scene      Scene    @relation(fields: [sceneId], references: [id], onDelete: Cascade)
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@unique([sceneId, locationId])
+  @@index([locationId])
+}
+
+model SceneObject {
+  id        String @id @default(cuid())
+  sceneId   String
+  objectId  String
+
+  scene     Scene       @relation(fields: [sceneId], references: [id], onDelete: Cascade)
+  object    StoryObject @relation(fields: [objectId], references: [id], onDelete: Cascade)
+
+  @@unique([sceneId, objectId])
+  @@index([objectId])
+}
+
+// ============ MÓDULO 8 — WORLD BUILDING ============
+//
+// Diseño: en vez de una tabla por categoría (Country, City, Religion, Race...)
+// —que obligaría a rediseñar el schema cada vez que aparece una categoría nueva—
+// usamos UN modelo flexible con `category`, más un grafo de enlaces tipo wiki
+// (WorldEntryLink) para conectar cualquier entrada con cualquier otra
+// ("Reino de Valdor" --gobernado por--> "Rey Aldric" --profesa--> "Culto del Alba").
+// Los árboles genealógicos NO se duplican acá: se calculan a partir de
+// CharacterRelationship (tipo FAMILY), que ya existe desde el Módulo 5.
+
+enum WorldCategory {
+  COUNTRY
+  CITY
+  CULTURE
+  ECONOMY
+  RELIGION
+  HISTORY_EVENT
+  RACE
+  CREATURE
+  LANGUAGE
+  POLITICS
+  TECHNOLOGY
+  MAGIC_SYSTEM
+  CALENDAR
+  CURRENCY
+  LAW
+  ORGANIZATION
+  OTHER
+}
+
+model WorldEntry {
+  id         String        @id @default(cuid())
+  projectId  String
+  category   WorldCategory
+  title      String
+  summary    String?
+  content    Json          @default("{}")  // documento Tiptap, igual que Scene.content
+  coverImage String?
+  tags       String[]      @default([])
+
+  parentId   String?       // ej: una Ciudad cuelga de un País
+
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  project    Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parent     WorldEntry?   @relation("WorldHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children   WorldEntry[]  @relation("WorldHierarchy")
+
+  linksFrom  WorldEntryLink[] @relation("LinkFrom")
+  linksTo    WorldEntryLink[] @relation("LinkTo")
+
+  @@index([projectId, category])
+  @@index([parentId])
+}
+
+//  Enlace dirigido y tipado entre dos entradas de la wiki, con una etiqueta libre que describe la relación
+model WorldEntryLink {
+  id       String  @id @default(cuid())
+  fromId   String
+  toId     String
+  relation String? // ej: "capital de", "en guerra con", "profesa", "gobernado por"
+
+  from     WorldEntry @relation("LinkFrom", fields: [fromId], references: [id], onDelete: Cascade)
+  to       WorldEntry @relation("LinkTo", fields: [toId], references: [id], onDelete: Cascade)
+
+  @@unique([fromId, toId, relation])
+  @@index([toId])
+}
+
+// ============ MÓDULO 10 — LÍNEA TEMPORAL ============
+//
+// Dos "órdenes" coexisten a propósito, tal como pide la spec:
+//  - Orden CRONOLÓGICO: cuándo pasó el evento en el mundo de la historia (sortKey / date).
+//  - Orden NARRATIVO: en qué momento el LECTOR se entera (se deriva de las escenas
+//    enlazadas al evento vía EventScene, siguiendo Parte > Capítulo > Escena).
+// No se guarda un "narrativeOrder" aparte: si se guardara, se desincronizaría
+// apenas alguien reordena capítulos. Se recalcula siempre desde la estructura real.
+
+enum TimelineEventType {
+  GENERIC
+  BIRTH
+  DEATH
+  BATTLE
+  MEETING
+  TRAVEL
+  DISCOVERY
+  OTHER
+}
+
+model TimelineEvent {
+  id              String            @id @default(cuid())
+  projectId       String
+
+  title           String
+  description     String?
+  eventType       TimelineEventType @default(GENERIC)
+
+  displayDate     String?           // fecha en calendario ficticio, ej. "3ra Era, año 1042"
+  date            DateTime?         // fecha real, si la novela usa calendario real
+  sortKey         Int               // posición cronológica manual (drag & drop cuando no hay fecha comparable)
+  durationMinutes Int?
+
+  locationId      String?
+
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  project         Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  location        Location?         @relation(fields: [locationId], references: [id], onDelete: SetNull)
+
+  characters      EventCharacter[]
+  scenes          EventScene[]
+  characterMovements CharacterMovement[]
+
+  @@index([projectId, sortKey])
+}
+
+model EventCharacter {
+  id          String @id @default(cuid())
+  eventId     String
+  characterId String
+  role        String? // ej: "protagonista", "víctima", "testigo"
+
+  event       TimelineEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  character   Character     @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, characterId])
+  @@index([characterId])
+}
+
+model EventScene {
+  id      String @id @default(cuid())
+  eventId String
+  sceneId String
+
+  event   TimelineEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  scene   Scene         @relation(fields: [sceneId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, sceneId])
+  @@index([sceneId])
+}
+
+// ============ MÓDULO 11 — MAPAS ============
+//
+// MapAsset es la imagen del mapa en sí (mundo, ciudad, edificio), con jerarquía
+// opcional (una ciudad puede "vivir dentro de" el mapa del mundo). MapPin ancla
+// Lugares o Personajes a una posición (x, y) relativa [0..1] sobre esa imagen,
+// así el pin se reposiciona solo si el mapa se reemplaza por una versión de otro
+// tamaño. CharacterMovement registra POR DÓNDE pasó un personaje a lo largo de
+// la historia — cada punto se puede atar a una escena (orden narrativo) o a un
+// evento del Timeline (orden cronológico), reusando lo que ya existe en vez de
+// duplicar el concepto de "orden".
+
+enum MapType {
+  WORLD
+  REGION
+  CITY
+  BUILDING
+  OTHER
+}
+
+model MapAsset {
+  id          String   @id @default(cuid())
+  projectId   String
+
+  title       String
+  mapType     MapType  @default(WORLD)
+  imageUrl    String
+  width       Int?     // dimensiones en píxeles de la imagen, para escalar los pines
+  height      Int?
+
+  parentMapId String?  // ej: el mapa de una ciudad "cuelga" del mapa del mundo
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  project     Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parentMap   MapAsset?  @relation("MapHierarchy", fields: [parentMapId], references: [id], onDelete: SetNull)
+  childMaps   MapAsset[] @relation("MapHierarchy")
+
+  pins        MapPin[]
+  movements   CharacterMovement[]
+
+  @@index([projectId, mapType])
+  @@index([parentMapId])
+}
+
+//  Un punto anclado sobre un mapa: puede representar un Lugar, o ser un marcador libre
+model MapPin {
+  id          String  @id @default(cuid())
+  mapId       String
+  x           Float   // posición relativa 0..1 (no píxeles absolutos)
+  y           Float
+  label       String?
+
+  locationId  String?
+  characterId String? // ej: "base de operaciones" o residencia de un personaje
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  map         MapAsset   @relation(fields: [mapId], references: [id], onDelete: Cascade)
+  location    Location?  @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  character   Character? @relation(fields: [characterId], references: [id], onDelete: SetNull)
+
+  @@index([mapId])
+}
+
+//  Un punto en el recorrido de un personaje sobre un mapa a lo largo de la historia
+model CharacterMovement {
+  id          String   @id @default(cuid())
+  characterId String
+  mapId       String
+  x           Float
+  y           Float
+  note        String?
+
+  sceneId     String?  // ancla narrativa (opcional)
+  eventId     String?  // ancla cronológica (opcional, Timeline)
+
+  createdAt   DateTime @default(now())
+
+  character   Character      @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  map         MapAsset       @relation(fields: [mapId], references: [id], onDelete: Cascade)
+  scene       Scene?         @relation(fields: [sceneId], references: [id], onDelete: SetNull)
+  event       TimelineEvent? @relation(fields: [eventId], references: [id], onDelete: SetNull)
+
+  @@index([characterId, mapId])
+}
+
+// ============ MÓDULO 9 — INVESTIGACIÓN ============
+//
+// Un solo modelo para todos los tipos de material (PDF, Word, Excel, audio,
+// video, imágenes, links, notas, recortes) en vez de una tabla por tipo:
+// todos comparten el mismo ciclo de vida (título, archivo/link, tags, notas),
+// y separarlos en tablas distintas solo complicaría filtrar/buscar entre todos
+// a la vez, que es justo lo que pide la spec ("todo etiquetable").
+
+enum ResearchItemType {
+  PDF
+  WORD
+  EXCEL
+  AUDIO
+  VIDEO
+  IMAGE
+  LINK
+  NOTE
+  CLIPPING
+  OTHER
+}
+
+model ResearchItem {
+  id            String           @id @default(cuid())
+  projectId     String
+
+  title         String
+  type          ResearchItemType
+  fileUrl       String?          // archivos subidos vía /uploads/presigned-url
+  linkUrl       String?          // para type = LINK
+  content       String?          // texto libre, para type = NOTE / CLIPPING
+  mimeType      String?
+  fileSizeBytes Int?
+  tags          String[]         @default([])
+
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  project       Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, type])
+}

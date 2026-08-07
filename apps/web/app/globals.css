@@ -1,0 +1,70 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html.light {
+  color-scheme: light;
+}
+
+body {
+  @apply bg-ink-950 text-ink_text font-sans antialiased;
+}
+
+html.light body {
+  @apply bg-paper-50 text-ink-950;
+}
+
+/* Foco visible siempre — accesibilidad, no decoración */
+:focus-visible {
+  outline: 2px solid theme('colors.brass.DEFAULT');
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+::selection {
+  background-color: theme('colors.brass.DEFAULT');
+  color: theme('colors.ink.950');
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: theme('colors.ink.700');
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+html.light ::-webkit-scrollbar-thumb {
+  background: theme('colors.paper.200');
+  background-clip: content-box;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Editor Tiptap: tipografía de lectura cómoda para sesiones largas de escritura */
+.ProseMirror {
+  @apply font-display text-[1.15rem] leading-[1.85] outline-none;
+  min-height: 60vh;
+}
+.ProseMirror p.is-empty:first-child::before {
+  content: attr(data-placeholder);
+  @apply text-muted float-left h-0 pointer-events-none;
+}
+.ProseMirror p {
+  @apply mb-4;
+}
