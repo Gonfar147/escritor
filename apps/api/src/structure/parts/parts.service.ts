@@ -25,7 +25,12 @@ export class PartsService {
     return this.prisma.part.findMany({
       where: { projectId },
       orderBy: { order: 'asc' },
-      include: { chapters: { orderBy: { order: 'asc' } } },
+      include: {
+        chapters: {
+          orderBy: { order: 'asc' },
+          include: { scenes: { orderBy: { order: 'asc' } } },
+        },
+      },
     });
   }
 
