@@ -25,6 +25,34 @@ export class UpdateSceneDto {
   @IsOptional()
   @IsIn(['DRAFT', 'IN_PROGRESS', 'REVIEW', 'DONE'])
   status?: 'DRAFT' | 'IN_PROGRESS' | 'REVIEW' | 'DONE';
+
+  @IsOptional()
+  @IsString()
+  objective?: string;
+
+  @IsOptional()
+  @IsString()
+  conflict?: string;
+
+  @IsOptional()
+  @IsString()
+  emotionalChange?: string;
+
+  @IsOptional()
+  @IsString()
+  infoRevealed?: string;
+
+  @IsOptional()
+  @IsString()
+  infoProtected?: string;
+
+  @IsOptional()
+  @IsString()
+  transition?: string;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
 }
 
 export class ReorderScenesDto {

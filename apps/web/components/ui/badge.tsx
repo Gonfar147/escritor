@@ -9,6 +9,14 @@ const statusStyles: Record<string, string> = {
   COMPLETED: 'bg-verdigris/25 text-verdigris-light',
   PUBLISHED: 'bg-brass/25 text-brass-light',
   ARCHIVED: 'bg-ink-800 text-muted',
+  IDEA: 'bg-ink-800 text-muted',
+  PLANNING: 'bg-brass/10 text-brass-light',
+  REVISED: 'bg-verdigris/15 text-verdigris-light',
+  // Módulo 14 — Notas
+  EXPLORING: 'bg-brass/10 text-brass-light',
+  DEVELOPED: 'bg-verdigris/15 text-verdigris-light',
+  INCORPORATED: 'bg-verdigris/25 text-verdigris-light',
+  DISCARDED: 'bg-brick/15 text-brick-light',
 };
 
 const statusLabels: Record<string, string> = {
@@ -20,6 +28,14 @@ const statusLabels: Record<string, string> = {
   COMPLETED: 'Completado',
   PUBLISHED: 'Publicado',
   ARCHIVED: 'Archivado',
+  IDEA: '💭 Idea',
+  PLANNING: 'Planificación',
+  REVISED: 'Revisado',
+  // Módulo 14 — Notas
+  EXPLORING: '🔎 Explorando',
+  DEVELOPED: '💡 Desarrollada',
+  INCORPORATED: '📌 Incorporada',
+  DISCARDED: '🗑️ Descartada',
 };
 
 export function StatusBadge({ status }: { status: string }) {

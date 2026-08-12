@@ -16,7 +16,7 @@ export class PartsService {
     const order = dto.order ?? (await this.prisma.part.count({ where: { projectId } }));
 
     return this.prisma.part.create({
-      data: { projectId, title: dto.title, order },
+      data: { projectId, title: dto.title, order, label: dto.label },
     });
   }
 
@@ -26,9 +26,21 @@ export class PartsService {
       where: { projectId },
       orderBy: { order: 'asc' },
       include: {
+        // Solo capítulos que cuelgan DIRECTO de la Parte (sin Secuencia) — los que sí
+        // tienen secuencia se listan dentro de `sequences[].chapters` para no duplicarlos.
         chapters: {
+          where: { sequenceId: null },
           orderBy: { order: 'asc' },
           include: { scenes: { orderBy: { order: 'asc' } } },
+        },
+        sequences: {
+          orderBy: { order: 'asc' },
+          include: {
+            chapters: {
+              orderBy: { order: 'asc' },
+              include: { scenes: { orderBy: { order: 'asc' } } },
+            },
+          },
         },
       },
     });

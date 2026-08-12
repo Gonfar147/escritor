@@ -81,6 +81,7 @@ export default function EditorPage() {
         <SceneEditor
           key={selectedScene.id}
           scene={selectedScene}
+          projectId={projectId}
           onWordCountChange={(n) => onWordCountChange(selectedScene.id, n)}
         />
       ) : (

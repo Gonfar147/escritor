@@ -1,6 +1,8 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProjectAccessService } from '../common/project-access.service';
+import { IndexingService } from '../indexing/indexing.service';
+import { objectIndexText } from '../indexing/entity-text.util';
 import { CreateObjectDto, UpdateObjectDto, LinkSceneDto } from './dto/object.dto';
 
 @Injectable()
@@ -8,11 +10,14 @@ export class ObjectsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: ProjectAccessService,
+    private readonly indexing: IndexingService,
   ) {}
 
   async create(userId: string, projectId: string, dto: CreateObjectDto) {
     await this.access.assertRole(userId, projectId, ProjectAccessService.WRITE_ROLES);
-    return this.prisma.storyObject.create({ data: { ...dto, projectId } });
+    const object = await this.prisma.storyObject.create({ data: { ...dto, projectId } });
+    this.indexing.indexEntityAsync(projectId, 'OBJECT', object.id, object.name, objectIndexText(object));
+    return object;
   }
 
   async findAll(userId: string, projectId: string) {
@@ -67,13 +72,17 @@ export class ObjectsService {
   async update(userId: string, objectId: string, dto: UpdateObjectDto) {
     const object = await this.requireObject(objectId);
     await this.access.assertRole(userId, object.projectId, ProjectAccessService.WRITE_ROLES);
-    return this.prisma.storyObject.update({ where: { id: objectId }, data: dto });
+    const updated = await this.prisma.storyObject.update({ where: { id: objectId }, data: dto });
+    this.indexing.indexEntityAsync(object.projectId, 'OBJECT', updated.id, updated.name, objectIndexText(updated));
+    return updated;
   }
 
   async remove(userId: string, objectId: string) {
     const object = await this.requireObject(objectId);
     await this.access.assertRole(userId, object.projectId, ProjectAccessService.WRITE_ROLES);
-    return this.prisma.storyObject.delete({ where: { id: objectId } });
+    const removed = await this.prisma.storyObject.delete({ where: { id: objectId } });
+    this.indexing.removeEntityAsync('OBJECT', objectId);
+    return removed;
   }
 
   async linkScene(userId: string, objectId: string, dto: LinkSceneDto) {

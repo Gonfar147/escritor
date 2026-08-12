@@ -34,6 +34,11 @@ export class ChaptersController {
     return this.chaptersService.findAll(req.user.userId, partId);
   }
 
+  @Get('chapters/:id')
+  findOne(@Req() req: any, @Param('id') id: string) {
+    return this.chaptersService.findOne(req.user.userId, id);
+  }
+
   @Patch('chapters/:id')
   update(@Req() req: any, @Param('id') id: string, @Body() dto: UpdateChapterDto) {
     return this.chaptersService.update(req.user.userId, id, dto);

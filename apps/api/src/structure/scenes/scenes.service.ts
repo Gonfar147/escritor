@@ -2,6 +2,8 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { PrismaService } from '../../prisma/prisma.service';
 import { ProjectAccessService } from '../../common/project-access.service';
 import { countWordsInTiptapDoc } from '../../common/word-count.util';
+import { IndexingService } from '../../indexing/indexing.service';
+import { extractTextFromTiptapDoc } from '../../indexing/text-chunking.util';
 import {
   CreateSceneDto,
   UpdateSceneDto,
@@ -18,6 +20,7 @@ export class ScenesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: ProjectAccessService,
+    private readonly indexing: IndexingService,
   ) {}
 
   async create(userId: string, chapterId: string, dto: CreateSceneDto) {
@@ -27,7 +30,7 @@ export class ScenesService {
     const order = dto.order ?? (await this.prisma.scene.count({ where: { chapterId } }));
     const content = dto.content ?? EMPTY_DOC;
 
-    return this.prisma.scene.create({
+    const scene = await this.prisma.scene.create({
       data: {
         chapterId,
         title: dto.title,
@@ -36,6 +39,8 @@ export class ScenesService {
         wordCount: countWordsInTiptapDoc(content),
       },
     });
+    this.indexing.indexEntityAsync(projectId, 'SCENE', scene.id, scene.title, extractTextFromTiptapDoc(content));
+    return scene;
   }
 
   async findAll(userId: string, chapterId: string) {
@@ -66,13 +71,19 @@ export class ScenesService {
       data.wordCount = countWordsInTiptapDoc(dto.content);
     }
 
-    return this.prisma.scene.update({ where: { id: sceneId }, data });
+    const scene = await this.prisma.scene.update({ where: { id: sceneId }, data });
+    if (dto.content !== undefined || dto.title !== undefined) {
+      this.indexing.indexEntityAsync(projectId, 'SCENE', scene.id, scene.title, extractTextFromTiptapDoc(scene.content));
+    }
+    return scene;
   }
 
   async remove(userId: string, sceneId: string) {
     const projectId = await this.access.projectIdForScene(sceneId);
     await this.access.assertRole(userId, projectId, ProjectAccessService.WRITE_ROLES);
-    return this.prisma.scene.delete({ where: { id: sceneId } });
+    const scene = await this.prisma.scene.delete({ where: { id: sceneId } });
+    this.indexing.removeEntityAsync('SCENE', sceneId);
+    return scene;
   }
 
   async reorder(userId: string, chapterId: string, dto: ReorderScenesDto) {
@@ -112,7 +123,7 @@ export class ScenesService {
 
     const siblingCount = await this.prisma.scene.count({ where: { chapterId: original.chapterId } });
 
-    return this.prisma.scene.create({
+    const copy = await this.prisma.scene.create({
       data: {
         chapterId: original.chapterId,
         title: `${original.title} (copia)`,
@@ -122,6 +133,8 @@ export class ScenesService {
         status: 'DRAFT',
       },
     });
+    this.indexing.indexEntityAsync(projectId, 'SCENE', copy.id, copy.title, extractTextFromTiptapDoc(copy.content));
+    return copy;
   }
 
   /** Fusiona varias escenas en una: concatena el contenido de sus documentos Tiptap */
@@ -160,6 +173,10 @@ export class ScenesService {
         },
       });
       await tx.scene.deleteMany({ where: { id: { in: toMerge.map((s) => s.id) } } });
+      return updated;
+    }).then((updated) => {
+      toMerge.forEach((s) => this.indexing.removeEntityAsync('SCENE', s.id));
+      this.indexing.indexEntityAsync(projectId, 'SCENE', updated.id, updated.title, extractTextFromTiptapDoc(updated.content));
       return updated;
     });
   }
@@ -201,6 +218,22 @@ export class ScenesService {
       });
 
       return { original: updatedOriginal, newScene };
+    }).then((result) => {
+      this.indexing.indexEntityAsync(
+        projectId,
+        'SCENE',
+        result.original.id,
+        result.original.title,
+        extractTextFromTiptapDoc(result.original.content),
+      );
+      this.indexing.indexEntityAsync(
+        projectId,
+        'SCENE',
+        result.newScene.id,
+        result.newScene.title,
+        extractTextFromTiptapDoc(result.newScene.content),
+      );
+      return result;
     });
   }
 

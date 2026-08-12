@@ -1,10 +1,12 @@
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector]
 }
 
 // ============ AUTH / USERS ============
@@ -76,6 +78,7 @@ model Project {
   parts       Part[]
   tags        Tag[]
   notes       Note[]
+  noteGroups  NoteGroup[]
   characters  Character[]
   locations   Location[]
   objects     StoryObject[]
@@ -83,6 +86,10 @@ model Project {
   timelineEvents TimelineEvent[]
   mapAssets   MapAsset[]
   researchItems ResearchItem[]
+  embeddingChunks   EmbeddingChunk[]
+  chatConversations ChatConversation[]
+  vision            NovelVision?
+  aiProposals       AiProposal[]
 
   @@index([updatedAt])
 }
@@ -100,7 +107,11 @@ model ProjectMember {
   @@unique([projectId, userId])
 }
 
-// ============ STRUCTURE: PART > CHAPTER > SCENE ============
+// ============ STRUCTURE: PART > SEQUENCE (opcional) > CHAPTER > SCENE ============
+// Extendido por el módulo "Arquitectura": Part pasa a cumplir el rol de Acto/Parte/
+// Bloque (nivel superior configurable vía `label`, sin crear una jerarquía paralela),
+// y se agrega Sequence como capa intermedia OPCIONAL entre Part y Chapter. Todos los
+// campos narrativos nuevos son opcionales para no invalidar novelas existentes.
 
 enum SceneStatus {
   DRAFT
@@ -109,33 +120,106 @@ enum SceneStatus {
   DONE
 }
 
+// Estados de planificación de Arquitectura (Idea -> ... -> Finalizado). Deliberadamente
+// distinto de SceneStatus (que ya usan Chapter/Scene): son conceptos distintos y no
+// hay forma de mapear "Idea"/"Planificación" a los 4 valores de SceneStatus sin perder
+// información, así que en vez de forzar una reutilización que no encaja, se agrega este
+// enum solo donde no existía ya un status (Part, Sequence). Chapter/Scene conservan su
+// SceneStatus existente sin tocar.
+enum ArchitectureStatus {
+  IDEA
+  PLANNING
+  IN_PROGRESS
+  DRAFT
+  REVISED
+  DONE
+}
+
 model Part {
   id        String    @id @default(cuid())
   projectId String
   title     String
   order     Int
+
+  // --- Arquitectura: Part = nivel Acto/Parte/Bloque (nombre configurable, misma tabla) ---
+  label             String              @default("Parte") // cómo lo llama el autor: "Acto", "Bloque", "Sección", lo que sea
+  narrativeFunction String?
+  objective         String?
+  conflict          String?
+  planningStatus    ArchitectureStatus?
+  notes             String?
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
   project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
   chapters  Chapter[]
+  sequences Sequence[]
 
   @@index([projectId, order])
+}
+
+// Capa opcional entre Part y Chapter. Un Chapter puede colgar directo de su Part
+// (sequenceId null) o agruparse dentro de una Sequence — ambos casos conviven en la
+// misma novela, incluso en el mismo Part.
+model Sequence {
+  id        String    @id @default(cuid())
+  partId    String
+  title     String
+  order     Int
+
+  narrativeFunction String?
+  objective         String?
+  conflict          String?
+  beginning         String? // cómo arranca la secuencia
+  ending            String? // cómo termina
+  consequences      String? // qué desencadena para lo que sigue
+  planningStatus    ArchitectureStatus?
+  notes             String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  part      Part      @relation(fields: [partId], references: [id], onDelete: Cascade)
+  chapters  Chapter[]
+
+  @@index([partId, order])
 }
 
 model Chapter {
   id        String      @id @default(cuid())
   partId    String
+  sequenceId String?    // opcional: si es null, el capítulo cuelga directo del Part
   title     String
   order     Int
   status    SceneStatus @default(DRAFT)
+
+  // --- Arquitectura: ficha estructural del capítulo (todo opcional) ---
+  narrativeFunction String?
+  objective         String?
+  conflict          String?
+  change            String? // qué cambia entre el comienzo y el final del capítulo
+  infoToReveal      String?
+  infoToProtect     String?
+  hook              String? // qué deja preparado para lo siguiente
+  notes             String?
+
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt
 
   part      Part        @relation(fields: [partId], references: [id], onDelete: Cascade)
+  sequence  Sequence?   @relation(fields: [sequenceId], references: [id], onDelete: SetNull)
   scenes    Scene[]
 
+  // Vínculos de planificación a nivel capítulo (antes de tener escenas concretas).
+  // Distintos de SceneCharacter/SceneLocation, que operan a nivel escena — ambos
+  // coexisten: el capítulo dice "quién/dónde en términos generales", la escena
+  // ya es específica.
+  characterLinks ChapterCharacter[]
+  locationLinks  ChapterLocation[]
+
   @@index([partId, order])
+  @@index([sequenceId])
 }
 
 model Scene {
@@ -146,6 +230,23 @@ model Scene {
   content    Json          @default("{}")
   wordCount  Int           @default(0)
   status     SceneStatus   @default(DRAFT)
+
+  // Estado binario Yjs (CRDT) de la colaboración en tiempo real sobre esta escena.
+  // Null hasta que la escena se abre por primera vez con Hocuspocus. `content` sigue
+  // siendo la fuente de verdad para todo lo demás (RAG, export, IA); esto es solo lo
+  // que permite reconstruir el documento colaborativo con su historial de merges intacto
+  // en vez de recrearlo desde cero a partir del JSON en cada reconexión.
+  ydocState  Bytes?
+
+  // --- Arquitectura: ficha estructural de la escena (todo opcional) ---
+  objective       String?
+  conflict        String?
+  emotionalChange String?
+  infoRevealed    String?
+  infoProtected   String?
+  transition      String?
+  notes           String?
+
   createdAt  DateTime      @default(now())
   updatedAt  DateTime      @updatedAt
 
@@ -159,6 +260,34 @@ model Scene {
   characterMovements   CharacterMovement[]
 
   @@index([chapterId, order])
+}
+
+// Personajes vinculados a un capítulo en la etapa de planificación (antes de escribir
+// escenas concretas). No reemplaza a SceneCharacter, que sigue siendo la fuente de
+// verdad de "quién aparece" una vez que el capítulo tiene escenas escritas.
+model ChapterCharacter {
+  id          String @id @default(cuid())
+  chapterId   String
+  characterId String
+  role        String? // ej: "protagonista de este capítulo", "punto de vista"
+
+  chapter     Chapter   @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@unique([chapterId, characterId])
+  @@index([characterId])
+}
+
+model ChapterLocation {
+  id         String @id @default(cuid())
+  chapterId  String
+  locationId String
+
+  chapter    Chapter  @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@unique([chapterId, locationId])
+  @@index([locationId])
 }
 
 model SceneVersion {
@@ -182,19 +311,115 @@ model Tag {
   color     String?
 
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  noteTags  NoteTag[]
 
   @@unique([projectId, name])
 }
 
-model Note {
+// ============ MÓDULO 14 — NOTAS (espacio de pensamiento) ============
+//
+// "Arquitectura organiza lo que la historia es. Notas conserva lo que el
+// escritor está pensando sobre la historia." Reusa el modelo Note que ya
+// existía (estaba en el schema pero sin ningún servicio/controlador todavía)
+// en vez de crear uno paralelo. NoteRelation es deliberadamente liviana
+// (entityType + entityId, mismo patrón que EmbeddingChunk) para poder
+// referenciar Character/Chapter/Scene/Location/TimelineEvent/Part/Sequence
+// sin duplicar ni un campo de esas entidades.
+
+enum NoteStatus {
+  IDEA         // 💭
+  EXPLORING    // 🔎
+  DEVELOPED    // 💡
+  INCORPORATED // 📌
+  DISCARDED    // 🗑️ — se conserva igual, nunca se borra automáticamente
+}
+
+enum NoteRelationEntityType {
+  CHARACTER
+  PART
+  SEQUENCE
+  CHAPTER
+  SCENE
+  LOCATION
+  TIMELINE_EVENT
+}
+
+model NoteGroup {
   id        String   @id @default(cuid())
   projectId String
-  title     String
-  content   String
+  name      String
+  color     String?
+  archived  Boolean  @default(false)
+  order     Int      @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  notes     Note[]
+
+  @@index([projectId, archived])
+}
+
+model Note {
+  id        String     @id @default(cuid())
+  projectId String
+  title     String?    // opcional (punto 9) — la bandeja no exige título
+  content   String
+  status    NoteStatus @default(IDEA)
+
+  // null = "Bandeja" (sin organizar todavía, punto 3). Nunca se borra el
+  // grupo en cascada hacia la nota: si se borra un NoteGroup, sus notas
+  // vuelven a la Bandeja (onDelete: SetNull más abajo).
+  groupId   String?
+
+  // Trazabilidad de origen IA (puntos 16-17): de qué AiProposal salió esta
+  // nota (si nació de "Guardar como nota") y de qué notas de origen partió
+  // el análisis que la generó. Son opcionales porque la inmensa mayoría de
+  // las notas las escribe el autor directamente, no la IA.
+  aiOriginProposalId String?
+  aiSourceNoteIds     String[] @default([])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project     Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  group       NoteGroup?        @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  aiOrigin    AiProposal?       @relation(fields: [aiOriginProposalId], references: [id], onDelete: SetNull)
+  noteTags    NoteTag[]
+  relations   NoteRelation[]
+
+  @@index([projectId, groupId])
+  @@index([projectId, status])
+  @@index([aiOriginProposalId])
+}
+
+model NoteTag {
+  noteId String
+  tagId  String
+
+  note   Note @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  tag    Tag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([noteId, tagId])
+  @@index([tagId])
+}
+
+// Relación liviana de una nota con una entidad existente de EscrITor (punto 6).
+// No usa una FK por tipo (evitaría 7 columnas nullable) ni una tabla por tipo
+// (evitaría 7 tablas casi idénticas) — mismo trade-off ya aceptado en
+// EmbeddingChunk para el mismo problema. La integridad referencial por tipo
+// se valida en el service, no en la base.
+model NoteRelation {
+  id         String                  @id @default(cuid())
+  noteId     String
+  entityType NoteRelationEntityType
+  entityId   String
+  createdAt  DateTime                @default(now())
+
+  note       Note                    @relation(fields: [noteId], references: [id], onDelete: Cascade)
+
+  @@unique([noteId, entityType, entityId])
+  @@index([entityType, entityId])
 }
 
 // ============ MÓDULO 5 — PERSONAJES ============
@@ -263,6 +488,9 @@ model Character {
   eventAppearances EventCharacter[]
   mapPins        MapPin[]
   movements      CharacterMovement[]
+  chapterLinks   ChapterCharacter[]
+  structuredArc  CharacterArc?
+  visionAsProtagonist NovelVision[]
 
   @@index([projectId, name])
 }
@@ -305,6 +533,7 @@ model Location {
   objects          StoryObject[]
   events           TimelineEvent[]
   mapPins          MapPin[]
+  chapterLinks     ChapterLocation[]
 
   @@index([projectId, name])
 }
@@ -489,6 +718,8 @@ model TimelineEvent {
   characters      EventCharacter[]
   scenes          EventScene[]
   characterMovements CharacterMovement[]
+  causesFrom      EventCausality[] @relation("CausalityFrom")
+  causesTo        EventCausality[] @relation("CausalityTo")
 
   @@index([projectId, sortKey])
 }
@@ -627,23 +858,255 @@ enum ResearchItemType {
   OTHER
 }
 
+// Estado de la extracción de texto/OCR para materiales tipo PDF/IMAGE.
+// NONE = no aplica (tipo sin texto extraíble, ej. LINK/AUDIO) o todavía no se corrió.
+enum OcrStatus {
+  NONE
+  PENDING
+  DONE
+  FAILED
+}
+
+// Estado de la transcripción para materiales tipo AUDIO/VIDEO. Mismos valores que
+// OcrStatus pero como enum aparte: son procesos independientes (Whisper vs Tesseract)
+// que pueden coexistir a futuro si un mismo archivo tuviera ambas necesidades.
+enum TranscriptionStatus {
+  NONE
+  PENDING
+  DONE
+  FAILED
+}
+
 model ResearchItem {
-  id            String           @id @default(cuid())
-  projectId     String
+  id                  String              @id @default(cuid())
+  projectId           String
 
-  title         String
-  type          ResearchItemType
-  fileUrl       String?          // archivos subidos vía /uploads/presigned-url
-  linkUrl       String?          // para type = LINK
-  content       String?          // texto libre, para type = NOTE / CLIPPING
-  mimeType      String?
-  fileSizeBytes Int?
-  tags          String[]         @default([])
+  title               String
+  type                ResearchItemType
+  fileUrl             String?             // archivos subidos vía /uploads/presigned-url
+  linkUrl             String?             // para type = LINK
+  content             String?             // texto libre (NOTE/CLIPPING), o extraído por OCR/transcripción
+  mimeType            String?
+  fileSizeBytes       Int?
+  tags                String[]            @default([])
+  ocrStatus           OcrStatus           @default(NONE)
+  transcriptionStatus TranscriptionStatus @default(NONE)
 
-  createdAt     DateTime         @default(now())
-  updatedAt     DateTime         @updatedAt
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
 
-  project       Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project             Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([projectId, type])
+}
+
+// ============ MÓDULO 12 — IA (INDEXACIÓN, RAG, CHAT) ============
+//
+// EmbeddingChunk guarda fragmentos de texto indexados de CUALQUIER entidad del
+// codex (escena, personaje, lugar, objeto, entrada de wiki, evento, material de
+// investigación) junto a su vector de embedding (pgvector). Un solo modelo en vez
+// de una tabla por tipo de entidad, mismo criterio que WorldEntry/ResearchItem:
+// todas las entidades comparten el mismo ciclo de indexado (trocear -> embeber ->
+// upsert) y lo que cambia es únicamente de dónde sale el texto.
+//
+// El campo `embedding` es `Unsupported("vector(1024)")` porque Prisma Client no
+// tiene un tipo nativo para pgvector: la escritura y la búsqueda por similitud de
+// coseno se hacen con SQL crudo ($executeRaw / $queryRaw) en IndexingService y
+// RagService. 1024 = dimensión de voyage-3.5.
+
+enum EmbeddingEntityType {
+  SCENE
+  CHARACTER
+  LOCATION
+  OBJECT
+  WORLD_ENTRY
+  TIMELINE_EVENT
+  RESEARCH_ITEM
+  NOTE
+}
+
+model EmbeddingChunk {
+  id         String              @id @default(cuid())
+  projectId  String
+  entityType EmbeddingEntityType
+  entityId   String
+  chunkIndex Int                 @default(0)
+  title      String              // título/nombre de la entidad de origen, para citar la fuente en el chat
+  content    String              // texto plano del fragmento (ya extraído del Tiptap doc / campos del modelo)
+  embedding  Unsupported("vector(1024)")?
+
+  createdAt  DateTime            @default(now())
+  updatedAt  DateTime            @updatedAt
+
+  project    Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([entityType, entityId, chunkIndex])
+  @@index([projectId, entityType])
+}
+
+// ---- Chat con el asistente, con historial persistente por proyecto ----
+
+enum ChatRole {
+  USER
+  ASSISTANT
+}
+
+model ChatConversation {
+  id        String        @id @default(cuid())
+  projectId String
+  userId    String
+  title     String?       // se autogenera del primer mensaje, editable
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  project   Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  messages  ChatMessage[]
+
+  @@index([projectId, userId, updatedAt])
+}
+
+model ChatMessage {
+  id             String           @id @default(cuid())
+  conversationId String
+  role           ChatRole
+  content        String
+  sources        Json?            // fragmentos del codex citados en la respuesta (título, tipo, entityId)
+  createdAt      DateTime         @default(now())
+
+  conversation   ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+}
+
+// ============ MÓDULO 13 — ARQUITECTURA NARRATIVA ============
+//
+// Capa de planificación macro sobre la novela: Visión, Arco de personaje,
+// causalidad entre acontecimientos y propuestas de IA separadas de la
+// arquitectura confirmada. Reusa entidades existentes (Project, Character,
+// TimelineEvent, Part/Sequence/Chapter/Scene ya extendidos arriba) en vez de
+// duplicarlas — ver comentario en el bloque STRUCTURE más arriba.
+
+// Visión de la novela: nivel más alto de planificación, 1:1 con Project. Todos
+// los campos son opcionales — el autor puede escribir una sola frase y ya
+// alcanza para empezar (punto 5 del prompt). NO repite title/genre/subgenre/
+// synopsis/pitch, que ya viven en Project: esto es específicamente lo que
+// faltaba (tema, pregunta central, conflicto central, antagonismo, final
+// previsto), no una copia de lo que ya existe.
+model NovelVision {
+  id                    String    @id @default(cuid())
+  projectId             String    @unique
+
+  premise               String?   // la "una frase" que puede alcanzar para arrancar
+  centralTheme          String?
+  centralQuestion       String?
+  centralConflict       String?
+  protagonistCharacterId String?  // referencia a un Character existente, no una copia
+  mainGoal              String?
+  antagonism            String?
+  worldNotes            String?
+  expectedEnding        String?
+  generalNotes          String?
+
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  project               Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  protagonist           Character? @relation(fields: [protagonistCharacterId], references: [id], onDelete: SetNull)
+}
+
+// Arco estructurado de un personaje: 1:1 con Character. Deliberadamente NO
+// repite goals/motivations/fears/conflicts/arc/traumas, que ya existen en
+// Character — solo agrega lo que no existía: el recorrido inicio -> quiebre ->
+// transformación -> final que pide el punto 6 del prompt.
+model CharacterArc {
+  id             String    @id @default(cuid())
+  characterId    String    @unique
+
+  initialState   String?   // qué cree/es/quiere al empezar
+  turningPoint   String?   // el quiebre que lo obliga a cambiar
+  transformation String?   // cómo cambia
+  finalState     String?   // en qué se convierte
+  resolution     String?
+  notes          String?
+
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  character      Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+}
+
+// Causalidad entre acontecimientos (punto 17): reusa TimelineEvent en vez de
+// crear un concepto de "acontecimiento" paralelo. Autorelación dirigida y
+// tipada por una descripción libre ("esto provoca aquello porque...").
+model EventCausality {
+  id          String        @id @default(cuid())
+  fromEventId String
+  toEventId   String
+  description String?
+  createdAt   DateTime      @default(now())
+
+  fromEvent   TimelineEvent @relation("CausalityFrom", fields: [fromEventId], references: [id], onDelete: Cascade)
+  toEvent     TimelineEvent @relation("CausalityTo", fields: [toEventId], references: [id], onDelete: Cascade)
+
+  @@unique([fromEventId, toEventId])
+  @@index([toEventId])
+}
+
+enum AiProposalType {
+  FULL_STRUCTURE       // propuesta de arquitectura completa (Actos > Secuencias > Capítulos)
+  ACT_STRUCTURE
+  SEQUENCE
+  CHAPTER
+  CHARACTER_ARC
+  COHERENCE_ANALYSIS   // resultado de "Ver análisis" (punto 18)
+  STRUCTURE_DISCOVERY  // resultado de "Analizar estructura existente" (punto 20)
+  REORGANIZATION
+  // Módulo 14 — Notas: los 6 modos de "Pensar con estas notas" + "Consultar mis
+  // ideas" (puntos 14/19). Todos son informativos — igual que COHERENCE_ANALYSIS,
+  // nunca modifican la novela por sí solos; cada tarjeta de resultado se guarda
+  // como Note nueva recién si el autor elige "Guardar como nota".
+  NOTE_CONNECT
+  NOTE_GENERATE_IDEAS
+  NOTE_DEEPEN
+  NOTE_FIND_CONFLICTS
+  NOTE_BUILD
+  NOTE_FIND_CONTRADICTIONS
+  NOTE_QUERY
+  OTHER
+}
+
+enum AiProposalStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  MODIFIED
+}
+
+// Propuestas de IA, completamente separadas de la arquitectura confirmada
+// (puntos 19, 20 y 25 del prompt). `content` es la propuesta original de la IA
+// y NUNCA se edita después de creada, para poder comparar más adelante qué
+// sugirió la IA contra qué terminó aceptando el autor. Si el autor la acepta
+// con cambios, esos cambios quedan en `appliedContent` (aparte), no
+// sobrescribiendo `content`. Aplicar una propuesta significa que el backend
+// usa su contenido para crear/actualizar filas reales en Part/Sequence/Chapter/
+// etc. — la tabla en sí nunca es la fuente de verdad de la novela.
+model AiProposal {
+  id             String            @id @default(cuid())
+  projectId      String
+
+  type           AiProposalType
+  status         AiProposalStatus  @default(PENDING)
+
+  content        Json              // propuesta estructurada tal cual la generó la IA (inmutable)
+  appliedContent Json?             // lo que el autor terminó aceptando, si difiere del original
+  contextSummary String?           // qué contexto de la novela se usó para generarla (trazabilidad)
+
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  resolvedAt     DateTime?
+
+  project        Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  notes          Note[]            // notas guardadas a partir de esta propuesta (punto 17)
+
+  @@index([projectId, status])
 }

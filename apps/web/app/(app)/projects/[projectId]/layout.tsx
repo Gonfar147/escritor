@@ -6,6 +6,8 @@ import { cn } from '@/lib/utils';
 
 const TABS = [
   { href: '', label: 'Resumen' },
+  { href: '/architecture', label: 'Arquitectura' },
+  { href: '/notes', label: 'Notas' },
   { href: '/editor', label: 'Escribir' },
   { href: '/characters', label: 'Personajes' },
   { href: '/locations', label: 'Lugares' },
@@ -14,6 +16,8 @@ const TABS = [
   { href: '/timeline', label: 'Línea temporal' },
   { href: '/maps', label: 'Mapas' },
   { href: '/research', label: 'Investigación' },
+  { href: '/ai', label: 'Asistente IA' },
+  { href: '/export', label: 'Exportar' },
 ];
 
 export default function ProjectLayout({ children }: { children: React.ReactNode }) {

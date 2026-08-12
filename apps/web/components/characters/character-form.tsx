@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Check, Loader2, Trash2, Skull } from 'lucide-react';
 import { api } from '@/lib/api';
-import { Character, CharacterStatus } from '@/types/api';
+import { Character, CharacterStatus, CharacterArc } from '@/types/api';
 import { Input, Label } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select } from '@/components/ui/select';
@@ -189,6 +189,8 @@ export function CharacterForm({
           </Field>
         </Row>
       </Section>
+
+      <CharacterArcSection characterId={character.id} />
     </div>
   );
 }
@@ -220,4 +222,55 @@ function SaveIndicator({ state }: { state: 'idle' | 'saving' | 'saved' }) {
   if (state === 'saving') return <span className="flex items-center gap-1"><Loader2 className="h-3 w-3 animate-spin" /> Guardando…</span>;
   if (state === 'saved') return <span className="flex items-center gap-1 text-verdigris-light"><Check className="h-3 w-3" /> Guardado</span>;
   return <span>&nbsp;</span>;
+}
+
+/**
+ * Arco narrativo estructurado (módulo Arquitectura). Vive en un endpoint aparte
+ * (`/characters/:id/arc`, tabla CharacterArc) porque es información distinta de
+ * las virtudes/defectos/objetivos/motivaciones de más arriba en esta misma
+ * ficha — acá específicamente es el recorrido inicio → quiebre → final.
+ */
+function CharacterArcSection({ characterId }: { characterId: string }) {
+  const [arc, setArc] = useState<Partial<CharacterArc>>({});
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const timeout = useRef<ReturnType<typeof setTimeout>>();
+
+  useEffect(() => {
+    api.get<CharacterArc | null>(`/characters/${characterId}/arc`).then((a) => setArc(a ?? {}));
+  }, [characterId]);
+
+  function update<K extends keyof CharacterArc>(key: K, value: CharacterArc[K]) {
+    const next = { ...arc, [key]: value };
+    setArc(next);
+    setSaveState('idle');
+    if (timeout.current) clearTimeout(timeout.current);
+    timeout.current = setTimeout(() => save(next), 800);
+  }
+
+  async function save(next: Partial<CharacterArc>) {
+    setSaveState('saving');
+    const { id, characterId: _c, ...payload } = next as CharacterArc;
+    await api.put(`/characters/${characterId}/arc`, payload);
+    setSaveState('saved');
+  }
+
+  return (
+    <Section title="Arco narrativo (Arquitectura)">
+      <div className="mb-2 flex justify-end text-xs text-muted"><SaveIndicator state={saveState} /></div>
+      <Row cols={2}>
+        <Field label="Estado inicial"><Textarea rows={2} value={arc.initialState ?? ''} onChange={(e) => update('initialState', e.target.value)} placeholder="Qué cree/es/quiere al empezar" /></Field>
+        <Field label="Punto de quiebre"><Textarea rows={2} value={arc.turningPoint ?? ''} onChange={(e) => update('turningPoint', e.target.value)} placeholder="El quiebre que lo obliga a cambiar" /></Field>
+      </Row>
+      <Row cols={2}>
+        <Field label="Transformación"><Textarea rows={2} value={arc.transformation ?? ''} onChange={(e) => update('transformation', e.target.value)} placeholder="Cómo cambia" /></Field>
+        <Field label="Estado final"><Textarea rows={2} value={arc.finalState ?? ''} onChange={(e) => update('finalState', e.target.value)} placeholder="En qué se convierte" /></Field>
+      </Row>
+      <Row>
+        <Field label="Resolución"><Textarea rows={2} value={arc.resolution ?? ''} onChange={(e) => update('resolution', e.target.value)} /></Field>
+      </Row>
+      <Row>
+        <Field label="Notas"><Textarea rows={2} value={arc.notes ?? ''} onChange={(e) => update('notes', e.target.value)} /></Field>
+      </Row>
+    </Section>
+  );
 }

@@ -11,6 +11,12 @@ import { TimelineModule } from './timeline/timeline.module';
 import { MapsModule } from './maps/maps.module';
 import { UploadsModule } from './uploads/uploads.module';
 import { ResearchModule } from './research/research.module';
+import { IndexingModule } from './indexing/indexing.module';
+import { AiModule } from './ai/ai.module';
+import { ExportModule } from './export/export.module';
+import { ArchitectureModule } from './architecture/architecture.module';
+import { CollaborationModule } from './collaboration/collaboration.module';
+import { NotesModule } from './notes/notes.module';
 
 @Module({
   imports: [
@@ -26,7 +32,12 @@ import { ResearchModule } from './research/research.module';
     MapsModule,
     UploadsModule,
     ResearchModule,
-    // Fases siguientes se agregan acá como módulos independientes: AiModule, etc.
+    IndexingModule,
+    AiModule,
+    ExportModule,
+    ArchitectureModule,
+    CollaborationModule,
+    NotesModule,
   ],
 })
 export class AppModule {}

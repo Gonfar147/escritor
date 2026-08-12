@@ -107,6 +107,7 @@ export default function ResearchPage() {
         onClose={() => setDialogOpen(false)}
         onSave={saveItem}
         onDelete={editing ? deleteItem : undefined}
+        projectId={projectId}
         initial={editing}
       />
     </div>

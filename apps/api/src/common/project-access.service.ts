@@ -12,6 +12,15 @@ export class ProjectAccessService {
     return part.projectId;
   }
 
+  async projectIdForSequence(sequenceId: string): Promise<string> {
+    const sequence = await this.prisma.sequence.findUnique({
+      where: { id: sequenceId },
+      include: { part: true },
+    });
+    if (!sequence) throw new NotFoundException('Secuencia no encontrada');
+    return sequence.part.projectId;
+  }
+
   async projectIdForChapter(chapterId: string): Promise<string> {
     const chapter = await this.prisma.chapter.findUnique({
       where: { id: chapterId },

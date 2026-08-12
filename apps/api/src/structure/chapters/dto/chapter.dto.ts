@@ -8,6 +8,10 @@ export class CreateChapterDto {
   @IsInt()
   @Min(0)
   order?: number;
+
+  @IsOptional()
+  @IsString()
+  sequenceId?: string; // opcional: si no se manda, el capítulo cuelga directo de la Parte
 }
 
 export class UpdateChapterDto {
@@ -18,6 +22,42 @@ export class UpdateChapterDto {
   @IsOptional()
   @IsIn(['DRAFT', 'IN_PROGRESS', 'REVIEW', 'DONE'])
   status?: 'DRAFT' | 'IN_PROGRESS' | 'REVIEW' | 'DONE';
+
+  @IsOptional()
+  @IsString()
+  sequenceId?: string | null; // null explícito para desvincular de la secuencia
+
+  @IsOptional()
+  @IsString()
+  narrativeFunction?: string;
+
+  @IsOptional()
+  @IsString()
+  objective?: string;
+
+  @IsOptional()
+  @IsString()
+  conflict?: string;
+
+  @IsOptional()
+  @IsString()
+  change?: string;
+
+  @IsOptional()
+  @IsString()
+  infoToReveal?: string;
+
+  @IsOptional()
+  @IsString()
+  infoToProtect?: string;
+
+  @IsOptional()
+  @IsString()
+  hook?: string;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
 }
 
 export class ReorderChaptersDto {

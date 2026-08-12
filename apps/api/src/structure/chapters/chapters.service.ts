@@ -22,7 +22,7 @@ export class ChaptersService {
 
     const order = dto.order ?? (await this.prisma.chapter.count({ where: { partId } }));
 
-    return this.prisma.chapter.create({ data: { partId, title: dto.title, order } });
+    return this.prisma.chapter.create({ data: { partId, title: dto.title, order, sequenceId: dto.sequenceId } });
   }
 
   async findAll(userId: string, partId: string) {
@@ -33,6 +33,21 @@ export class ChaptersService {
       orderBy: { order: 'asc' },
       include: { scenes: { orderBy: { order: 'asc' }, select: { id: true, title: true, wordCount: true, status: true, order: true } } },
     });
+  }
+
+  async findOne(userId: string, chapterId: string) {
+    const projectId = await this.access.projectIdForChapter(chapterId);
+    await this.access.assertMember(userId, projectId);
+    const chapter = await this.prisma.chapter.findUnique({
+      where: { id: chapterId },
+      include: {
+        scenes: { orderBy: { order: 'asc' } },
+        characterLinks: true,
+        locationLinks: true,
+      },
+    });
+    if (!chapter) throw new NotFoundException('Capítulo no encontrado');
+    return chapter;
   }
 
   async update(userId: string, chapterId: string, dto: UpdateChapterDto) {

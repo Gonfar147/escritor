@@ -1,6 +1,8 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProjectAccessService } from '../common/project-access.service';
+import { IndexingService } from '../indexing/indexing.service';
+import { locationIndexText } from '../indexing/entity-text.util';
 import { CreateLocationDto, UpdateLocationDto, LinkSceneDto } from './dto/location.dto';
 
 @Injectable()
@@ -8,11 +10,14 @@ export class LocationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: ProjectAccessService,
+    private readonly indexing: IndexingService,
   ) {}
 
   async create(userId: string, projectId: string, dto: CreateLocationDto) {
     await this.access.assertRole(userId, projectId, ProjectAccessService.WRITE_ROLES);
-    return this.prisma.location.create({ data: { ...dto, projectId } });
+    const location = await this.prisma.location.create({ data: { ...dto, projectId } });
+    this.indexing.indexEntityAsync(projectId, 'LOCATION', location.id, location.name, locationIndexText(location));
+    return location;
   }
 
   async findAll(userId: string, projectId: string) {
@@ -58,13 +63,17 @@ export class LocationsService {
   async update(userId: string, locationId: string, dto: UpdateLocationDto) {
     const location = await this.requireLocation(locationId);
     await this.access.assertRole(userId, location.projectId, ProjectAccessService.WRITE_ROLES);
-    return this.prisma.location.update({ where: { id: locationId }, data: dto });
+    const updated = await this.prisma.location.update({ where: { id: locationId }, data: dto });
+    this.indexing.indexEntityAsync(location.projectId, 'LOCATION', updated.id, updated.name, locationIndexText(updated));
+    return updated;
   }
 
   async remove(userId: string, locationId: string) {
     const location = await this.requireLocation(locationId);
     await this.access.assertRole(userId, location.projectId, ProjectAccessService.WRITE_ROLES);
-    return this.prisma.location.delete({ where: { id: locationId } });
+    const removed = await this.prisma.location.delete({ where: { id: locationId } });
+    this.indexing.removeEntityAsync('LOCATION', locationId);
+    return removed;
   }
 
   async linkScene(userId: string, locationId: string, dto: LinkSceneDto) {

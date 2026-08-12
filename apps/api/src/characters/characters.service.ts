@@ -1,6 +1,8 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProjectAccessService } from '../common/project-access.service';
+import { IndexingService } from '../indexing/indexing.service';
+import { characterIndexText } from '../indexing/entity-text.util';
 import {
   CreateCharacterDto,
   UpdateCharacterDto,
@@ -13,17 +15,20 @@ export class CharactersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: ProjectAccessService,
+    private readonly indexing: IndexingService,
   ) {}
 
   async create(userId: string, projectId: string, dto: CreateCharacterDto) {
     await this.access.assertRole(userId, projectId, ProjectAccessService.WRITE_ROLES);
-    return this.prisma.character.create({
+    const character = await this.prisma.character.create({
       data: {
         ...dto,
         birthDate: dto.birthDate ? new Date(dto.birthDate) : undefined,
         projectId,
       } as any,
     });
+    this.indexing.indexEntityAsync(projectId, 'CHARACTER', character.id, character.name, characterIndexText(character));
+    return character;
   }
 
   async findAll(userId: string, projectId: string) {
@@ -52,19 +57,23 @@ export class CharactersService {
   async update(userId: string, characterId: string, dto: UpdateCharacterDto) {
     const character = await this.requireCharacter(characterId);
     await this.access.assertRole(userId, character.projectId, ProjectAccessService.WRITE_ROLES);
-    return this.prisma.character.update({
+    const updated = await this.prisma.character.update({
       where: { id: characterId },
       data: {
         ...dto,
         birthDate: dto.birthDate ? new Date(dto.birthDate) : undefined,
       } as any,
     });
+    this.indexing.indexEntityAsync(character.projectId, 'CHARACTER', updated.id, updated.name, characterIndexText(updated));
+    return updated;
   }
 
   async remove(userId: string, characterId: string) {
     const character = await this.requireCharacter(characterId);
     await this.access.assertRole(userId, character.projectId, ProjectAccessService.WRITE_ROLES);
-    return this.prisma.character.delete({ where: { id: characterId } });
+    const removed = await this.prisma.character.delete({ where: { id: characterId } });
+    this.indexing.removeEntityAsync('CHARACTER', characterId);
+    return removed;
   }
 
   // ---- Relaciones entre personajes (familia, aliados, enemigos, mentores, parejas) ----

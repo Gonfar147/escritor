@@ -8,6 +8,7 @@ import { Input, Label } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
+import { CausalityPanel } from './causality-panel';
 
 const TYPE_LABELS: Record<TimelineEventType, string> = {
   GENERIC: 'General', BIRTH: 'Nacimiento', DEATH: 'Muerte', BATTLE: 'Batalla',
@@ -162,6 +163,8 @@ export function TimelineEventForm({
           </div>
         )}
       </div>
+
+      <CausalityPanel eventId={event.id} />
     </div>
   );
 }

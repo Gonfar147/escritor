@@ -51,6 +51,16 @@ export class ResearchController {
     return this.researchService.update(req.user.userId, id, dto);
   }
 
+  @Post('research/:id/ocr')
+  rerunOcr(@Req() req: any, @Param('id') id: string) {
+    return this.researchService.rerunOcr(req.user.userId, id);
+  }
+
+  @Post('research/:id/transcribe')
+  rerunTranscription(@Req() req: any, @Param('id') id: string) {
+    return this.researchService.rerunTranscription(req.user.userId, id);
+  }
+
   @Delete('research/:id')
   remove(@Req() req: any, @Param('id') id: string) {
     return this.researchService.remove(req.user.userId, id);

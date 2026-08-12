@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProjectAccessService } from '../common/project-access.service';
+import { IndexingService } from '../indexing/indexing.service';
 import {
   CreateEventDto,
   UpdateEventDto,
@@ -14,6 +15,7 @@ export class TimelineService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: ProjectAccessService,
+    private readonly indexing: IndexingService,
   ) {}
 
   async create(userId: string, projectId: string, dto: CreateEventDto) {
@@ -21,7 +23,7 @@ export class TimelineService {
 
     const sortKey = dto.sortKey ?? (await this.prisma.timelineEvent.count({ where: { projectId } }));
 
-    return this.prisma.timelineEvent.create({
+    const event = await this.prisma.timelineEvent.create({
       data: {
         ...dto,
         date: dto.date ? new Date(dto.date) : undefined,
@@ -29,6 +31,8 @@ export class TimelineService {
         projectId,
       },
     });
+    this.indexEvent(projectId, event);
+    return event;
   }
 
   /** Orden cronológico: cómo pasaron los hechos en el mundo de la historia */
@@ -112,16 +116,25 @@ export class TimelineService {
   async update(userId: string, eventId: string, dto: UpdateEventDto) {
     const event = await this.requireEvent(eventId);
     await this.access.assertRole(userId, event.projectId, ProjectAccessService.WRITE_ROLES);
-    return this.prisma.timelineEvent.update({
+    const updated = await this.prisma.timelineEvent.update({
       where: { id: eventId },
       data: { ...dto, date: dto.date ? new Date(dto.date) : undefined },
     });
+    this.indexEvent(event.projectId, updated);
+    return updated;
   }
 
   async remove(userId: string, eventId: string) {
     const event = await this.requireEvent(eventId);
     await this.access.assertRole(userId, event.projectId, ProjectAccessService.WRITE_ROLES);
-    return this.prisma.timelineEvent.delete({ where: { id: eventId } });
+    const removed = await this.prisma.timelineEvent.delete({ where: { id: eventId } });
+    this.indexing.removeEntityAsync('TIMELINE_EVENT', eventId);
+    return removed;
+  }
+
+  private indexEvent(projectId: string, event: { id: string; title: string; description: string | null; displayDate: string | null }) {
+    const text = [event.description ?? '', event.displayDate ?? ''].filter(Boolean).join('\n');
+    this.indexing.indexEntityAsync(projectId, 'TIMELINE_EVENT', event.id, event.title, text);
   }
 
   async reorder(userId: string, projectId: string, dto: ReorderEventsDto) {

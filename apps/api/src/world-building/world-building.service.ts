@@ -1,6 +1,8 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProjectAccessService } from '../common/project-access.service';
+import { IndexingService } from '../indexing/indexing.service';
+import { extractTextFromTiptapDoc } from '../indexing/text-chunking.util';
 import { WorldCategory } from '@prisma/client';
 import {
   CreateWorldEntryDto,
@@ -13,13 +15,16 @@ export class WorldBuildingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: ProjectAccessService,
+    private readonly indexing: IndexingService,
   ) {}
 
   async create(userId: string, projectId: string, dto: CreateWorldEntryDto) {
     await this.access.assertRole(userId, projectId, ProjectAccessService.WRITE_ROLES);
-    return this.prisma.worldEntry.create({
+    const entry = await this.prisma.worldEntry.create({
       data: { ...dto, content: (dto.content ?? {}) as any, projectId },
     });
+    this.indexWorldEntry(projectId, entry);
+    return entry;
   }
 
   /** Lista, opcionalmente filtrada por categoría — así se arma cada pestaña de la wiki (Países, Razas, etc.) */
@@ -80,16 +85,25 @@ export class WorldBuildingService {
       throw new BadRequestException('Una entrada no puede ser padre de sí misma');
     }
 
-    return this.prisma.worldEntry.update({
+    const updated = await this.prisma.worldEntry.update({
       where: { id: entryId },
       data: { ...dto, content: dto.content !== undefined ? (dto.content as any) : undefined },
     });
+    this.indexWorldEntry(entry.projectId, updated);
+    return updated;
   }
 
   async remove(userId: string, entryId: string) {
     const entry = await this.requireEntry(entryId);
     await this.access.assertRole(userId, entry.projectId, ProjectAccessService.WRITE_ROLES);
-    return this.prisma.worldEntry.delete({ where: { id: entryId } });
+    const removed = await this.prisma.worldEntry.delete({ where: { id: entryId } });
+    this.indexing.removeEntityAsync('WORLD_ENTRY', entryId);
+    return removed;
+  }
+
+  private indexWorldEntry(projectId: string, entry: { id: string; title: string; summary: string | null; content: unknown }) {
+    const text = [entry.summary ?? '', extractTextFromTiptapDoc(entry.content)].filter(Boolean).join('\n\n');
+    this.indexing.indexEntityAsync(projectId, 'WORLD_ENTRY', entry.id, entry.title, text);
   }
 
   // ---- Enlaces cruzados tipo wiki ----
