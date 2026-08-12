@@ -1,6 +1,13 @@
 generator client {
   provider        = "prisma-client-js"
   previewFeatures = ["postgresqlExtensions"]
+  // Sin esto, `prisma generate` escribe en node_modules/@prisma/client relativo
+  // a la raíz del monorepo, pero apps/api resuelve @prisma/client contra su
+  // PROPIA copia en apps/api/node_modules (npm no dedupea porque las versiones
+  // declaradas en el root package.json y en apps/api/package.json no coinciden).
+  // Resultado: el runtime usa un cliente viejo/sin generar y faltan modelos.
+  // Apuntar el output acá saca la ambigüedad de la ecuación.
+  output          = "../../apps/api/node_modules/@prisma/client"
 }
 
 datasource db {
