@@ -7,7 +7,7 @@ generator client {
   // declaradas en el root package.json y en apps/api/package.json no coinciden).
   // Resultado: el runtime usa un cliente viejo/sin generar y faltan modelos.
   // Apuntar el output acá saca la ambigüedad de la ecuación.
-  output          = "../../apps/api/node_modules/@prisma/client"
+  output          = "../../apps/api/node_modules/.prisma/client"
 }
 
 datasource db {
