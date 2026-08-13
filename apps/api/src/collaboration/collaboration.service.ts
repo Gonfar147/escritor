@@ -159,7 +159,7 @@ export class CollaborationService implements OnModuleDestroy {
     // alcanza para conectarse si no se pertenece al proyecto.
     const membership = await this.access.assertMember(userId, realProjectId);
 
-    const canWrite = (ProjectAccessService.WRITE_ROLES as readonly string[]).includes(membership.role);
+    const canWrite = ProjectAccessService.WRITE_ROLES.includes(membership.role);
     if (!canWrite) {
       data.connection.readOnly = true;
     }
