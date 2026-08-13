@@ -1,4 +1,5 @@
 import { IsIn, IsObject, IsOptional, IsString } from 'class-validator';
+import { Prisma } from '@prisma/client';
 
 const PROPOSAL_STATUSES = ['ACCEPTED', 'REJECTED', 'MODIFIED'] as const;
 
@@ -14,7 +15,7 @@ export class ResolveProposalDto {
    */
   @IsOptional()
   @IsObject()
-  appliedContent?: Record<string, unknown>;
+  appliedContent?: Prisma.JsonObject;
 }
 
 export class ConstructWithAiDto {
