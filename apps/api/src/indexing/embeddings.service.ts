@@ -7,8 +7,8 @@ type VoyageInputType = 'document' | 'query';
 
 /**
  * Wrapper sobre la API REST de Voyage AI (https://docs.voyageai.com).
- * Anthropic no ofrece un endpoint de embeddings propio — Claude se usa para el
- * razonamiento (chat, escritura asistida) y Voyage para vectorizar texto.
+ * Ni Anthropic ni Gemini se usan acá — Gemini resuelve el razonamiento
+ * (chat, escritura asistida) y Voyage sigue vectorizando texto para RAG.
  * Modelo por defecto: voyage-3.5, 1024 dimensiones, general-purpose.
  */
 @Injectable()

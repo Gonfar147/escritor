@@ -11,7 +11,7 @@ import { ArchitectureAiService } from './architecture-ai.service';
 import { ArchitectureAnalysisService } from './architecture-analysis.service';
 
 @Module({
-  imports: [AiModule], // reusa AnthropicService (RagService no hace falta acá: no se busca por similitud, se arma contexto directo)
+  imports: [AiModule], // reusa GeminiService (RagService no hace falta acá: no se busca por similitud, se arma contexto directo)
   controllers: [ArchitectureController],
   providers: [
     SequencesService,

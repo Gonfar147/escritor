@@ -68,7 +68,7 @@ export class AiProposalsService {
       where: { id: proposalId },
       data: {
         status: dto.status,
-        appliedContent: dto.appliedContent ?? undefined,
+        appliedContent: (dto.appliedContent as any) ?? undefined,
         resolvedAt: new Date(),
       },
     });

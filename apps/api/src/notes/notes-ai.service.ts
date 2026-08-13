@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProjectAccessService } from '../common/project-access.service';
-import { AnthropicService } from '../ai/anthropic.service';
+import { GeminiService } from '../ai/gemini.service';
 import { RagService } from '../ai/rag.service';
 import { ArchitectureContextService } from '../architecture/architecture-context.service';
 import { ThinkWithNotesDto, QueryIdeasDto, SaveInsightAsNoteDto, NoteAiMode } from './dto/note.dto';
@@ -54,7 +54,7 @@ export class NotesAiService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: ProjectAccessService,
-    private readonly anthropic: AnthropicService,
+    private readonly gemini: GeminiService,
     private readonly rag: RagService,
     private readonly context: ArchitectureContextService,
   ) {}
@@ -87,7 +87,7 @@ export class NotesAiService {
 
     const userPrompt = `Contexto mínimo de la novela:\n${overview}\n\n--- Notas seleccionadas ---\n${notesBlock}\n\nTarea: ${mode.task}`;
 
-    const raw = await this.anthropic.complete([{ role: 'user', content: userPrompt }], {
+    const raw = await this.gemini.complete([{ role: 'user', content: userPrompt }], {
       system: `Sos un asistente creativo que ayuda a un/a escritor/a a pensar sobre notas sueltas de su novela.\n\n${SHARED_RULES}`,
       maxTokens: 2000,
     });
@@ -134,7 +134,7 @@ export class NotesAiService {
     }
 
     const contextBlock = RagService.formatContext(chunks);
-    const raw = await this.anthropic.complete(
+    const raw = await this.gemini.complete(
       [{ role: 'user', content: `Notas del archivo de ideas del autor:\n\n${contextBlock}\n\nPregunta del autor: ${dto.question}` }],
       {
         system: `Sos un asistente que ayuda a un/a escritor/a a explorar su propio archivo de ideas y notas.

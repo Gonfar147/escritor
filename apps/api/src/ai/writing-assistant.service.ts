@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProjectAccessService } from '../common/project-access.service';
-import { AnthropicService } from './anthropic.service';
+import { GeminiService } from './gemini.service';
 import { RagService } from './rag.service';
 import { extractTextFromTiptapDoc } from '../indexing/text-chunking.util';
 import { ContinueSceneDto, RewriteTextDto, BrainstormDto, DescribeEntityDto } from './dto/assist.dto';
@@ -20,7 +20,7 @@ export class WritingAssistantService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: ProjectAccessService,
-    private readonly anthropic: AnthropicService,
+    private readonly gemini: GeminiService,
     private readonly rag: RagService,
   ) {}
 
@@ -55,7 +55,7 @@ export class WritingAssistantService {
       .filter(Boolean)
       .join('\n');
 
-    const text = await this.anthropic.complete([{ role: 'user', content: userPrompt }], { system, maxTokens: 1200 });
+    const text = await this.gemini.complete([{ role: 'user', content: userPrompt }], { system, maxTokens: 1200 });
     return { text };
   }
 
@@ -81,7 +81,7 @@ export class WritingAssistantService {
       `\nIndicación: ${dto.instruction}`,
     ].join('\n');
 
-    const text = await this.anthropic.complete([{ role: 'user', content: userPrompt }], { system, maxTokens: 1500 });
+    const text = await this.gemini.complete([{ role: 'user', content: userPrompt }], { system, maxTokens: 1500 });
     return { text };
   }
 
@@ -101,7 +101,7 @@ export class WritingAssistantService {
       .filter(Boolean)
       .join('\n\n');
 
-    const text = await this.anthropic.complete([{ role: 'user', content: dto.prompt }], { system, maxTokens: 1200 });
+    const text = await this.gemini.complete([{ role: 'user', content: dto.prompt }], { system, maxTokens: 1200 });
     return { text };
   }
 
@@ -123,7 +123,7 @@ export class WritingAssistantService {
       .join('\n\n');
 
     const userPrompt = `Escribí una descripción para: ${name}.\n${summary}`;
-    const text = await this.anthropic.complete([{ role: 'user', content: userPrompt }], { system, maxTokens: 800 });
+    const text = await this.gemini.complete([{ role: 'user', content: userPrompt }], { system, maxTokens: 800 });
     return { text };
   }
 

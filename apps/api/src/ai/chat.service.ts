@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProjectAccessService } from '../common/project-access.service';
-import { AnthropicService, AnthropicMessage } from './anthropic.service';
+import { GeminiService, AiMessage } from './gemini.service';
 import { RagService } from './rag.service';
 import { CreateConversationDto, SendMessageDto } from './dto/chat.dto';
 
@@ -21,7 +21,7 @@ export class ChatService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: ProjectAccessService,
-    private readonly anthropic: AnthropicService,
+    private readonly gemini: GeminiService,
     private readonly rag: RagService,
   ) {}
 
@@ -69,7 +69,7 @@ export class ChatService {
       ? `${SYSTEM_PROMPT}\n\n=== CONTEXTO DE LA NOVELA ===\n${contextBlock}`
       : `${SYSTEM_PROMPT}\n\n(No se encontró contexto relevante indexado para esta consulta; respondé con lo que el usuario te da directamente en el mensaje.)`;
 
-    const messages: AnthropicMessage[] = [
+    const messages: AiMessage[] = [
       ...history.map((m) => ({
         role: (m.role === 'USER' ? 'user' : 'assistant') as 'user' | 'assistant',
         content: m.content,
@@ -77,7 +77,7 @@ export class ChatService {
       { role: 'user', content: dto.content },
     ];
 
-    const reply = await this.anthropic.complete(messages, { system, maxTokens: 1500 });
+    const reply = await this.gemini.complete(messages, { system, maxTokens: 1500 });
 
     const sources = chunks.map((c) => ({ entityType: c.entityType, entityId: c.entityId, title: c.title }));
 

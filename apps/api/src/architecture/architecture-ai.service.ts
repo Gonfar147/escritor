@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProjectAccessService } from '../common/project-access.service';
-import { AnthropicService } from '../ai/anthropic.service';
+import { GeminiService } from '../ai/gemini.service';
 import { ArchitectureContextService } from './architecture-context.service';
 import { StructureProposalContent, StructureDiscoveryContent } from './proposal-content.types';
 
@@ -62,7 +62,7 @@ export class ArchitectureAiService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: ProjectAccessService,
-    private readonly anthropic: AnthropicService,
+    private readonly gemini: GeminiService,
     private readonly context: ArchitectureContextService,
   ) {}
 
@@ -73,7 +73,7 @@ export class ArchitectureAiService {
     const overview = await this.context.projectOverview(projectId);
     const userPrompt = `${overview}\n\n--- Ideas del autor ---\n${prompt}\n\nProponé una estructura.`;
 
-    const raw = await this.anthropic.complete([{ role: 'user', content: userPrompt }], {
+    const raw = await this.gemini.complete([{ role: 'user', content: userPrompt }], {
       system: CONSTRUCT_SYSTEM_PROMPT,
       maxTokens: 3000,
     });
@@ -105,7 +105,7 @@ export class ArchitectureAiService {
     const summary = await this.context.manuscriptSummaryWithIds(projectId);
     const userPrompt = `${summary}\n\nAnalizá esta novela y proponé una organización estructural.`;
 
-    const raw = await this.anthropic.complete([{ role: 'user', content: userPrompt }], {
+    const raw = await this.gemini.complete([{ role: 'user', content: userPrompt }], {
       system: DISCOVER_SYSTEM_PROMPT,
       maxTokens: 4000,
     });

@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProjectAccessService } from '../common/project-access.service';
-import { AnthropicService } from '../ai/anthropic.service';
+import { GeminiService } from '../ai/gemini.service';
 import { ArchitectureContextService } from './architecture-context.service';
 import { CoherenceAnalysisContent, CoherenceFinding } from './proposal-content.types';
 
@@ -33,7 +33,7 @@ export class ArchitectureAnalysisService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: ProjectAccessService,
-    private readonly anthropic: AnthropicService,
+    private readonly gemini: GeminiService,
     private readonly context: ArchitectureContextService,
   ) {}
 
@@ -134,7 +134,7 @@ export class ArchitectureAnalysisService {
 
   private async runAiPass(projectId: string): Promise<CoherenceFinding[]> {
     const overview = await this.context.projectOverview(projectId);
-    const raw = await this.anthropic.complete([{ role: 'user', content: overview }], {
+    const raw = await this.gemini.complete([{ role: 'user', content: overview }], {
       system: AI_SYSTEM_PROMPT,
       maxTokens: 2000,
     });
