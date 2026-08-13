@@ -62,5 +62,5 @@ export class ProjectAccessService {
   }
 
   /** Roles con permiso de escritura sobre el contenido */
-  static readonly WRITE_ROLES = [ProjectRole.OWNER, ProjectRole.COAUTHOR, ProjectRole.EDITOR];
+  static readonly WRITE_ROLES: ProjectRole[] = [ProjectRole.OWNER, ProjectRole.COAUTHOR, ProjectRole.EDITOR];
 }
