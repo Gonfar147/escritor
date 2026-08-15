@@ -13,6 +13,7 @@ import { AuthProvider } from '@prisma/client';
 interface TokenPair {
   accessToken: string;
   refreshToken: string;
+  rememberMe: boolean;
 }
 
 @Injectable()
@@ -41,7 +42,7 @@ export class AuthService {
       },
     });
 
-    return this.issueTokens(user.id, user.email);
+    return this.issueTokens(user.id, user.email, dto.rememberMe ?? false);
   }
 
   async login(dto: LoginDto) {
@@ -58,10 +59,10 @@ export class AuthService {
       throw new UnauthorizedException('Credenciales inválidas');
     }
 
-    return this.issueTokens(user.id, user.email);
+    return this.issueTokens(user.id, user.email, dto.rememberMe ?? false);
   }
 
-  async refresh(userId: string, providedRefreshToken: string) {
+  async refresh(userId: string, providedRefreshToken: string, rememberMe: boolean) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user?.refreshToken) {
       throw new UnauthorizedException('Sesión inválida');
@@ -72,7 +73,7 @@ export class AuthService {
       throw new UnauthorizedException('Sesión inválida');
     }
 
-    return this.issueTokens(user.id, user.email);
+    return this.issueTokens(user.id, user.email, rememberMe);
   }
 
   async logout(userId: string) {
@@ -106,17 +107,25 @@ export class AuthService {
       });
     }
 
-    return this.issueTokens(user.id, user.email);
+    // Sin checkbox de "mantener sesión" en el flujo OAuth, se asume rememberMe
+    // para no degradar la experiencia (el usuario no tiene forma de tildarlo).
+    return this.issueTokens(user.id, user.email, true);
   }
 
-  private async issueTokens(userId: string, email: string): Promise<TokenPair> {
+  private async issueTokens(
+    userId: string,
+    email: string,
+    rememberMe: boolean,
+  ): Promise<TokenPair> {
     const accessToken = this.jwt.sign(
       { sub: userId, email },
       { expiresIn: '15m' },
     );
     const refreshToken = this.jwt.sign(
-      { sub: userId, type: 'refresh' },
-      { expiresIn: '7d' },
+      // `remember` viaja en el propio refresh token para que, al renovarlo,
+      // sepamos si hay que volver a emitir una cookie persistente o de sesión.
+      { sub: userId, type: 'refresh', remember: rememberMe },
+      { expiresIn: rememberMe ? '30d' : '1d' },
     );
 
     const refreshTokenHash = await argon2.hash(refreshToken);
@@ -125,6 +134,6 @@ export class AuthService {
       data: { refreshToken: refreshTokenHash },
     });
 
-    return { accessToken, refreshToken };
+    return { accessToken, refreshToken, rememberMe };
   }
 }

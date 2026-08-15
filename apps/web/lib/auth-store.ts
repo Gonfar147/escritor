@@ -13,8 +13,8 @@ interface User {
 interface AuthState {
   user: User | null;
   status: 'idle' | 'loading' | 'authenticated' | 'unauthenticated';
-  login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string, name: string) => Promise<void>;
+  login: (email: string, password: string, rememberMe?: boolean) => Promise<void>;
+  register: (email: string, password: string, name: string, rememberMe?: boolean) => Promise<void>;
   logout: () => Promise<void>;
   hydrate: () => Promise<void>;
 }
@@ -23,19 +23,24 @@ export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   status: 'idle',
 
-  login: async (email, password) => {
+  login: async (email, password, rememberMe = false) => {
     set({ status: 'loading' });
-    const { accessToken } = await api.post<{ accessToken: string }>('/auth/login', { email, password });
+    const { accessToken } = await api.post<{ accessToken: string }>('/auth/login', {
+      email,
+      password,
+      rememberMe,
+    });
     setAccessToken(accessToken);
     set({ status: 'authenticated' });
   },
 
-  register: async (email, password, name) => {
+  register: async (email, password, name, rememberMe = false) => {
     set({ status: 'loading' });
     const { accessToken } = await api.post<{ accessToken: string }>('/auth/register', {
       email,
       password,
       name,
+      rememberMe,
     });
     setAccessToken(accessToken);
     set({ status: 'authenticated' });

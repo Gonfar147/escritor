@@ -16,7 +16,9 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard';
 
 const REFRESH_COOKIE = 'refresh_token';
 const isProd = process.env.NODE_ENV === 'production';
-const REFRESH_COOKIE_OPTS: {
+const REMEMBER_ME_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 días, en línea con el expiresIn del refresh token
+
+const BASE_REFRESH_COOKIE_OPTS: {
   httpOnly: boolean;
   secure: boolean;
   sameSite: 'none' | 'lax';
@@ -31,6 +33,19 @@ const REFRESH_COOKIE_OPTS: {
   path: '/api/v1/auth',
 };
 
+/**
+ * Si rememberMe es true, la cookie queda persistente (sobrevive a cerrar el
+ * navegador) con maxAge alineado al expiresIn del refresh token. Si es false,
+ * es una cookie de sesión pura (sin maxAge/expires): el navegador la borra
+ * al cerrarse por completo, y de todos modos el refresh token subyacente
+ * expira a las 24hs como tope de seguridad.
+ */
+function refreshCookieOpts(rememberMe: boolean) {
+  return rememberMe
+    ? { ...BASE_REFRESH_COOKIE_OPTS, maxAge: REMEMBER_ME_MAX_AGE_MS }
+    : BASE_REFRESH_COOKIE_OPTS;
+}
+
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
@@ -38,14 +53,14 @@ export class AuthController {
   @Post('register')
   async register(@Body() dto: RegisterDto, @Res({ passthrough: true }) res: Response) {
     const tokens = await this.authService.register(dto);
-    res.cookie(REFRESH_COOKIE, tokens.refreshToken, REFRESH_COOKIE_OPTS);
+    res.cookie(REFRESH_COOKIE, tokens.refreshToken, refreshCookieOpts(tokens.rememberMe));
     return { accessToken: tokens.accessToken };
   }
 
   @Post('login')
   async login(@Body() dto: LoginDto, @Res({ passthrough: true }) res: Response) {
     const tokens = await this.authService.login(dto);
-    res.cookie(REFRESH_COOKIE, tokens.refreshToken, REFRESH_COOKIE_OPTS);
+    res.cookie(REFRESH_COOKIE, tokens.refreshToken, refreshCookieOpts(tokens.rememberMe));
     return { accessToken: tokens.accessToken };
   }
 
@@ -57,8 +72,9 @@ export class AuthController {
     const payload = JSON.parse(
       Buffer.from(refreshToken.split('.')[1], 'base64').toString(),
     );
-    const tokens = await this.authService.refresh(payload.sub, refreshToken);
-    res.cookie(REFRESH_COOKIE, tokens.refreshToken, REFRESH_COOKIE_OPTS);
+    const rememberMe = Boolean(payload.remember);
+    const tokens = await this.authService.refresh(payload.sub, refreshToken, rememberMe);
+    res.cookie(REFRESH_COOKIE, tokens.refreshToken, refreshCookieOpts(tokens.rememberMe));
     return { accessToken: tokens.accessToken };
   }
 
@@ -66,7 +82,7 @@ export class AuthController {
   @Post('logout')
   async logout(@Req() req: any, @Res({ passthrough: true }) res: Response) {
     await this.authService.logout(req.user.userId);
-    res.clearCookie(REFRESH_COOKIE, REFRESH_COOKIE_OPTS);
+    res.clearCookie(REFRESH_COOKIE, BASE_REFRESH_COOKIE_OPTS);
     return { success: true };
   }
 
@@ -117,7 +133,7 @@ export class AuthController {
       provider: provider as any,
       providerId: req.user.providerId,
     });
-    res.cookie(REFRESH_COOKIE, tokens.refreshToken, REFRESH_COOKIE_OPTS);
+    res.cookie(REFRESH_COOKIE, tokens.refreshToken, refreshCookieOpts(tokens.rememberMe));
     // Redirige al frontend con el access token en el fragmento de la URL
     res.redirect(`${process.env.WEB_URL}/auth/callback#token=${tokens.accessToken}`);
   }

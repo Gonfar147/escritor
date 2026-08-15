@@ -13,6 +13,7 @@ export default function LoginPage() {
   const login = useAuthStore((s) => s.login);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -21,7 +22,7 @@ export default function LoginPage() {
     setError(null);
     setLoading(true);
     try {
-      await login(email, password);
+      await login(email, password, rememberMe);
       router.push('/dashboard');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo iniciar sesión');
@@ -77,6 +78,16 @@ export default function LoginPage() {
                 placeholder="••••••••"
               />
             </div>
+
+            <label className="flex cursor-pointer items-center gap-2 select-none">
+              <input
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+                className="h-4 w-4 rounded border-ink-600 bg-transparent text-brass accent-brass focus-visible:outline focus-visible:outline-2 focus-visible:outline-brass"
+              />
+              <span className="text-sm text-muted">Mantener sesión iniciada</span>
+            </label>
 
             {error && <p className="text-sm text-brick-light">{error}</p>}
 

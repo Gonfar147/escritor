@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { LogOut, PenLine } from 'lucide-react';
 import { getAccessToken, setAccessToken, API_URL } from '@/lib/api';
 import { useAuthStore } from '@/lib/auth-store';
+import { ThemeToggle } from '@/components/theme-toggle';
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -45,15 +46,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <PenLine className="h-4 w-4 text-brass" strokeWidth={1.5} />
           Manuscrito
         </Link>
-        <button
-          onClick={async () => {
-            await logout();
-            router.replace('/login');
-          }}
-          className="flex items-center gap-1.5 text-sm text-muted transition-colors hover:text-ink_text"
-        >
-          <LogOut className="h-3.5 w-3.5" /> Cerrar sesión
-        </button>
+        <div className="flex items-center gap-3">
+          <ThemeToggle />
+          <button
+            onClick={async () => {
+              await logout();
+              router.replace('/login');
+            }}
+            className="flex items-center gap-1.5 text-sm text-muted transition-colors hover:text-ink_text"
+          >
+            <LogOut className="h-3.5 w-3.5" /> Cerrar sesión
+          </button>
+        </div>
       </header>
       <main>{children}</main>
     </div>
