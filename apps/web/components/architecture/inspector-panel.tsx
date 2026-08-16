@@ -33,6 +33,33 @@ const CHAPTER_STATUS_OPTIONS = [
   { value: 'DONE', label: 'Terminado' },
 ];
 
+// Campos de metadata/relaciones que el backend no acepta en los DTOs de
+// actualización (rompen la validación por `forbidNonWhitelisted: true`).
+// El form de cada inspector parte de una copia completa de la entidad
+// (incluye id, orden, timestamps, relaciones anidadas...), así que hay que
+// descartarlos antes de mandar el PATCH/PUT — solo viajan los campos editables.
+const NON_EDITABLE_KEYS = [
+  'id',
+  'projectId',
+  'partId',
+  'chapterId',
+  'order',
+  'createdAt',
+  'updatedAt',
+  'chapters',
+  'sequences',
+  'scenes',
+  '_count',
+] as const;
+
+function stripNonEditableFields<T extends Record<string, any>>(obj: T): Partial<T> {
+  const clean: Record<string, any> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (!(NON_EDITABLE_KEYS as readonly string[]).includes(key)) clean[key] = value;
+  }
+  return clean as Partial<T>;
+}
+
 function useAutosave<T extends Record<string, any>>(initial: T, endpoint: string, method: 'patch' | 'put' = 'patch') {
   const [form, setForm] = useState<T>(initial);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
@@ -64,7 +91,7 @@ function useAutosave<T extends Record<string, any>>(initial: T, endpoint: string
     }
     setSaveState('saving');
     try {
-      await api[method](endpoint, next);
+      await api[method](endpoint, stripNonEditableFields(next));
       setSaveState('saved');
       setErrorMessage(null);
     } catch (err) {

@@ -7,16 +7,16 @@ const config: Config = {
     extend: {
       colors: {
         ink: {
-          950: '#15141C',
-          900: '#1C1B26',
-          800: '#262533',
-          700: '#34333F',
-          600: '#4A4857',
+          950: 'rgb(var(--ink-950) / <alpha-value>)',
+          900: 'rgb(var(--ink-900) / <alpha-value>)',
+          800: 'rgb(var(--ink-800) / <alpha-value>)',
+          700: 'rgb(var(--ink-700) / <alpha-value>)',
+          600: 'rgb(var(--ink-600) / <alpha-value>)',
         },
         paper: {
-          50: '#EFEFE9',
-          100: '#E6E5DC',
-          200: '#D8D6C9',
+          50: 'rgb(var(--paper-50) / <alpha-value>)',
+          100: 'rgb(var(--paper-100) / <alpha-value>)',
+          200: 'rgb(var(--paper-200) / <alpha-value>)',
         },
         brass: {
           DEFAULT: '#B8944F',
@@ -31,8 +31,8 @@ const config: Config = {
           DEFAULT: '#B5533C',
           light: '#CC7962',
         },
-        ink_text: '#EDEAE0',
-        muted: '#8A8798',
+        ink_text: 'rgb(var(--ink-text) / <alpha-value>)',
+        muted: 'rgb(var(--muted) / <alpha-value>)',
       },
       fontFamily: {
         display: ['var(--font-fraunces)', 'ui-serif', 'Georgia', 'serif'],

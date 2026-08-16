@@ -4,18 +4,43 @@
 
 :root {
   color-scheme: dark;
+
+  /* Paleta oscura (default). Formato "R G B" para que Tailwind arme
+     rgb(var(--x) / <alpha-value>) y respete la opacidad de utilidades
+     como bg-ink-900/50. */
+  --ink-950: 21 20 28;    /* #15141C — fondo de página */
+  --ink-900: 28 27 38;    /* #1C1B26 — cards/paneles */
+  --ink-800: 38 37 51;    /* #262533 — bordes sutiles */
+  --ink-700: 52 51 63;    /* #34333F — bordes fuertes / hover */
+  --ink-600: 74 72 87;    /* #4A4857 — íconos/detalles apagados */
+  --paper-50: 239 239 233;
+  --paper-100: 230 229 220;
+  --paper-200: 216 214 201;
+  --ink-text: 237 234 224; /* texto principal */
+  --muted: 138 135 152;    /* texto secundario */
 }
 
 html.light {
   color-scheme: light;
+
+  /* Paleta clara: se invierte la escala tonal de ink/paper manteniendo
+     el mismo matiz cálido, para que TODO lo que ya usa bg-ink-950,
+     border-ink-800, text-ink_text, text-muted, etc. en toda la app
+     cambie de tema sin tener que tocar cada componente. */
+  --ink-950: 239 239 233; /* fondo de página: claro */
+  --ink-900: 255 255 255; /* cards/paneles: blanco, con más "elevación" que el fondo */
+  --ink-800: 216 214 201; /* bordes sutiles: gris cálido claro */
+  --ink-700: 190 187 174; /* bordes fuertes / hover */
+  --ink-600: 128 125 113; /* íconos/detalles apagados, todavía legibles sobre claro */
+  --paper-50: 28 27 38;
+  --paper-100: 38 37 51;
+  --paper-200: 52 51 63;
+  --ink-text: 26 25 32;   /* texto principal: casi negro cálido */
+  --muted: 104 100 90;    /* texto secundario: gris cálido medio, legible sobre claro */
 }
 
 body {
-  @apply bg-ink-950 text-ink_text font-sans antialiased;
-}
-
-html.light body {
-  @apply bg-paper-50 text-ink-950;
+  @apply bg-ink-950 text-ink_text font-sans antialiased transition-colors duration-150;
 }
 
 /* Foco visible siempre — accesibilidad, no decoración */
@@ -26,8 +51,9 @@ html.light body {
 }
 
 ::selection {
+  /* Texto siempre oscuro sobre el resaltado dorado — independiente del tema, para mantener el contraste */
   background-color: theme('colors.brass.DEFAULT');
-  color: theme('colors.ink.950');
+  color: #15141C;
 }
 
 ::-webkit-scrollbar {
@@ -38,13 +64,9 @@ html.light body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: theme('colors.ink.700');
+  background: rgb(var(--ink-700));
   border-radius: 999px;
   border: 2px solid transparent;
-  background-clip: content-box;
-}
-html.light ::-webkit-scrollbar-thumb {
-  background: theme('colors.paper.200');
   background-clip: content-box;
 }
 
