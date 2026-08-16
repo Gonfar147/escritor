@@ -3,8 +3,8 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { Check, Loader2, Trash2, X, Plus, PenLine } from 'lucide-react';
-import { api } from '@/lib/api';
+import { Check, Loader2, Trash2, X, Plus, PenLine, AlertTriangle, Save } from 'lucide-react';
+import { api, ApiError } from '@/lib/api';
 import { Part, Sequence, Chapter, SceneSummary, ArchitectureStatus, Character, Location } from '@/types/api';
 import { Input, Label } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -35,32 +35,105 @@ const CHAPTER_STATUS_OPTIONS = [
 
 function useAutosave<T extends Record<string, any>>(initial: T, endpoint: string, method: 'patch' | 'put' = 'patch') {
   const [form, setForm] = useState<T>(initial);
-  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const timeout = useRef<ReturnType<typeof setTimeout>>();
+  // Guarda el valor más reciente del form para que "Guardar ahora" (botón manual)
+  // siempre mande lo último, incluso si el debounce todavía no disparó.
+  const latest = useRef<T>(initial);
 
-  useEffect(() => setForm(initial), [initial]);
+  useEffect(() => {
+    setForm(initial);
+    latest.current = initial;
+  }, [initial]);
 
   function update<K extends keyof T>(key: K, value: T[K]) {
     const next = { ...form, [key]: value };
     setForm(next);
+    latest.current = next;
     setSaveState('idle');
+    setErrorMessage(null);
     if (timeout.current) clearTimeout(timeout.current);
     timeout.current = setTimeout(() => save(next), 800);
   }
 
-  async function save(next: T) {
+  async function save(next: T = latest.current) {
+    if (timeout.current) {
+      clearTimeout(timeout.current);
+      timeout.current = undefined;
+    }
     setSaveState('saving');
-    await api[method](endpoint, next);
-    setSaveState('saved');
+    try {
+      await api[method](endpoint, next);
+      setSaveState('saved');
+      setErrorMessage(null);
+    } catch (err) {
+      // Antes esto fallaba en silencio: el cambio se perdía y no había forma
+      // de saberlo. Ahora queda un estado de error visible + botón de reintentar.
+      setSaveState('error');
+      setErrorMessage(err instanceof ApiError ? err.message : 'No se pudo guardar. Revisá tu conexión.');
+    }
   }
 
-  return { form, update, saveState };
+  return { form, update, saveState, errorMessage, saveNow: () => save() };
 }
 
-function SaveIndicator({ state }: { state: 'idle' | 'saving' | 'saved' }) {
-  if (state === 'saving') return <Loader2 className="h-3.5 w-3.5 animate-spin text-muted" />;
-  if (state === 'saved') return <Check className="h-3.5 w-3.5 text-verdigris-light" />;
+function SaveIndicator({
+  state,
+  errorMessage,
+  onRetry,
+}: {
+  state: 'idle' | 'saving' | 'saved' | 'error';
+  errorMessage?: string | null;
+  onRetry?: () => void;
+}) {
+  if (state === 'saving') {
+    return (
+      <span className="flex items-center gap-1.5 text-xs text-muted">
+        <Loader2 className="h-3.5 w-3.5 animate-spin" /> Guardando…
+      </span>
+    );
+  }
+  if (state === 'saved') {
+    return (
+      <span className="flex items-center gap-1.5 text-xs text-verdigris-light">
+        <Check className="h-3.5 w-3.5" /> Guardado
+      </span>
+    );
+  }
+  if (state === 'error') {
+    return (
+      <span className="flex items-center gap-1.5 text-xs text-brick-light">
+        <AlertTriangle className="h-3.5 w-3.5" />
+        {errorMessage ?? 'No se pudo guardar'}
+        {onRetry && (
+          <button onClick={onRetry} className="underline hover:text-brick">
+            Reintentar
+          </button>
+        )}
+      </span>
+    );
+  }
   return null;
+}
+
+function SaveBar({
+  saveState,
+  errorMessage,
+  onSaveNow,
+}: {
+  saveState: 'idle' | 'saving' | 'saved' | 'error';
+  errorMessage?: string | null;
+  onSaveNow: () => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-2 rounded-md border border-ink-800 bg-ink-950/40 px-2.5 py-2">
+      <SaveIndicator state={saveState} errorMessage={errorMessage} onRetry={onSaveNow} />
+      <Button variant="secondary" size="sm" onClick={onSaveNow} disabled={saveState === 'saving'}>
+        <Save className="h-3.5 w-3.5" /> Guardar
+      </Button>
+    </div>
+  );
 }
 
 export function InspectorPanel({
@@ -102,7 +175,7 @@ export function InspectorPanel({
 // ---- Parte ----
 
 function PartInspector({ part, onChanged, onDeleted }: { part: Part; onChanged: () => void; onDeleted: () => void }) {
-  const { form, update, saveState } = useAutosave(part, `/parts/${part.id}`);
+  const { form, update, saveState, errorMessage, saveNow } = useAutosave(part, `/parts/${part.id}`);
 
   async function remove() {
     if (!confirm(`¿Eliminar "${form.title}" y todo su contenido? Esta acción no se puede deshacer.`)) return;
@@ -112,9 +185,7 @@ function PartInspector({ part, onChanged, onDeleted }: { part: Part; onChanged: 
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <SaveIndicator state={saveState} />
-      </div>
+      <SaveBar saveState={saveState} errorMessage={errorMessage} onSaveNow={saveNow} />
       <Field label="Título">
         <Input value={form.title} onChange={(e) => update('title', e.target.value)} />
       </Field>
@@ -149,7 +220,7 @@ function PartInspector({ part, onChanged, onDeleted }: { part: Part; onChanged: 
 // ---- Secuencia ----
 
 function SequenceInspector({ sequence, onChanged, onDeleted }: { sequence: Sequence; onChanged: () => void; onDeleted: () => void }) {
-  const { form, update, saveState } = useAutosave(sequence, `/sequences/${sequence.id}`, 'put');
+  const { form, update, saveState, errorMessage, saveNow } = useAutosave(sequence, `/sequences/${sequence.id}`, 'put');
 
   async function remove() {
     if (!confirm(`¿Eliminar la secuencia "${form.title}"? Sus capítulos pasan a colgar directo de la Parte.`)) return;
@@ -159,7 +230,7 @@ function SequenceInspector({ sequence, onChanged, onDeleted }: { sequence: Seque
 
   return (
     <div className="space-y-4">
-      <SaveIndicator state={saveState} />
+      <SaveBar saveState={saveState} errorMessage={errorMessage} onSaveNow={saveNow} />
       <Field label="Título">
         <Input value={form.title} onChange={(e) => update('title', e.target.value)} />
       </Field>
@@ -203,7 +274,7 @@ function SequenceInspector({ sequence, onChanged, onDeleted }: { sequence: Seque
 
 function ChapterInspector({ chapter, onChanged, onDeleted }: { chapter: Chapter; onChanged: () => void; onDeleted: () => void }) {
   const { projectId } = useParams<{ projectId: string }>();
-  const { form, update, saveState } = useAutosave(chapter, `/chapters/${chapter.id}`);
+  const { form, update, saveState, errorMessage, saveNow } = useAutosave(chapter, `/chapters/${chapter.id}`);
   const [characters, setCharacters] = useState<Character[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
   const [linkedCharacters, setLinkedCharacters] = useState<{ characterId: string; role?: string | null }[]>([]);
@@ -254,7 +325,7 @@ function ChapterInspector({ chapter, onChanged, onDeleted }: { chapter: Chapter;
 
   return (
     <div className="space-y-4">
-      <SaveIndicator state={saveState} />
+      <SaveBar saveState={saveState} errorMessage={errorMessage} onSaveNow={saveNow} />
       <Field label="Título">
         <Input value={form.title} onChange={(e) => update('title', e.target.value)} />
       </Field>
@@ -345,7 +416,7 @@ function ChapterInspector({ chapter, onChanged, onDeleted }: { chapter: Chapter;
 
 function SceneInspector({ scene, onChanged, onDeleted }: { scene: SceneSummary; chapterId: string; onChanged: () => void; onDeleted: () => void }) {
   const { projectId } = useParams<{ projectId: string }>();
-  const { form, update, saveState } = useAutosave(scene, `/scenes/${scene.id}`);
+  const { form, update, saveState, errorMessage, saveNow } = useAutosave(scene, `/scenes/${scene.id}`);
 
   async function remove() {
     if (!confirm(`¿Eliminar la escena "${form.title}"?`)) return;
@@ -355,7 +426,7 @@ function SceneInspector({ scene, onChanged, onDeleted }: { scene: SceneSummary; 
 
   return (
     <div className="space-y-4">
-      <SaveIndicator state={saveState} />
+      <SaveBar saveState={saveState} errorMessage={errorMessage} onSaveNow={saveNow} />
       <Field label="Título">
         <Input value={form.title} onChange={(e) => update('title', e.target.value)} />
       </Field>

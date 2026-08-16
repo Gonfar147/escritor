@@ -31,3 +31,5 @@ packages/prisma/*.db
 # Temporary
 *.tmp
 *.temp
+apps/web/tsconfig.tsbuildinfo
+*.tsbuildinfo
