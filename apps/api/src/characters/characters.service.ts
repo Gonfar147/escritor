@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ProjectAccessService } from '../common/project-access.service';
 import { IndexingService } from '../indexing/indexing.service';
 import { characterIndexText } from '../indexing/entity-text.util';
+import { CharacterSheetExporter, SheetFormat, buildSheet } from './character-sheet.exporter';
 import {
   CreateCharacterDto,
   UpdateCharacterDto,
@@ -16,7 +17,18 @@ export class CharactersService {
     private readonly prisma: PrismaService,
     private readonly access: ProjectAccessService,
     private readonly indexing: IndexingService,
+    private readonly sheetExporter: CharacterSheetExporter,
   ) {}
+
+  /** Exporta la ficha del personaje (txt / docx / pdf). Cualquier miembro del proyecto puede descargarla. */
+  async exportSheet(userId: string, characterId: string, format: SheetFormat) {
+    const character = await this.prisma.character.findUnique({ where: { id: characterId } });
+    if (!character) throw new NotFoundException('Personaje no encontrado');
+    await this.access.assertMember(userId, character.projectId);
+    const arc = await this.prisma.characterArc.findUnique({ where: { characterId } });
+    const { buffer, contentType } = await this.sheetExporter.export(buildSheet(character, arc), format);
+    return { buffer, contentType, name: character.name };
+  }
 
   async create(userId: string, projectId: string, dto: CreateCharacterDto) {
     await this.access.assertRole(userId, projectId, ProjectAccessService.WRITE_ROLES);

@@ -7,6 +7,9 @@ import { CollaborationService } from './collaboration/collaboration.service';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  // La foto del personaje viaja como data URL (ya reducida en el navegador); el límite por defecto (100kb) queda corto.
+  app.useBodyParser('json', { limit: '3mb' });
+
   app.use(cookieParser());
 
   app.enableCors({

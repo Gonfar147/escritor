@@ -8,10 +8,14 @@ import {
   Post,
   Query,
   Req,
+  Res,
   UseGuards,
+  BadRequestException,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CharactersService } from './characters.service';
+import { SHEET_FORMATS, SheetFormat } from './character-sheet.exporter';
 import {
   CreateCharacterDto,
   UpdateCharacterDto,
@@ -47,6 +51,25 @@ export class CharactersController {
   @Delete('characters/:id')
   remove(@Req() req: any, @Param('id') id: string) {
     return this.charactersService.remove(req.user.userId, id);
+  }
+
+  @Get('characters/:id/export')
+  async exportSheet(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Query('format') format: string,
+    @Res() res: Response,
+  ) {
+    if (!SHEET_FORMATS.includes(format as SheetFormat)) {
+      throw new BadRequestException('Formato inválido. Usá txt, docx o pdf.');
+    }
+    const { buffer, contentType, name } = await this.charactersService.exportSheet(req.user.userId, id, format as SheetFormat);
+    const slug =
+      name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'personaje';
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="ficha-${slug}.${format}"`);
+    res.setHeader('Content-Length', buffer.length.toString());
+    res.end(buffer);
   }
 
   @Get('characters/:id/family-tree')

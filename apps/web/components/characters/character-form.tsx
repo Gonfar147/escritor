@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Check, Loader2, Trash2, Skull } from 'lucide-react';
+import { Check, Loader2, Trash2, Skull, Camera, Download, ChevronDown, FileText, FileType2, FileDown, X } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Character, CharacterStatus, CharacterArc } from '@/types/api';
 import { Input, Label } from '@/components/ui/input';
@@ -17,6 +17,98 @@ const STATUS_LABELS: Record<CharacterStatus, string> = {
   UNKNOWN: 'Desconocido',
 };
 
+const MAX_PHOTO_BYTES = 10 * 1024 * 1024; // archivo original; luego se reduce
+const PHOTO_SIZE = 384;
+
+/** Recorta al centro en cuadrado y reduce a 384px JPEG: la foto queda en ~30-60 KB y se guarda directo en el personaje. */
+function resizePhoto(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const side = Math.min(img.width, img.height);
+      const canvas = document.createElement('canvas');
+      canvas.width = PHOTO_SIZE;
+      canvas.height = PHOTO_SIZE;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        URL.revokeObjectURL(url);
+        return reject(new Error('Canvas no disponible'));
+      }
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, PHOTO_SIZE, PHOTO_SIZE);
+      ctx.drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, PHOTO_SIZE, PHOTO_SIZE);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL('image/jpeg', 0.82));
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('No se pudo leer la imagen'));
+    };
+    img.src = url;
+  });
+}
+
+const EXPORT_FORMATS = [
+  { format: 'txt', label: 'Texto (.txt)', Icon: FileText },
+  { format: 'docx', label: 'Word (.docx)', Icon: FileType2 },
+  { format: 'pdf', label: 'PDF (.pdf)', Icon: FileDown },
+] as const;
+
+function ExportMenu({ characterId, characterName, beforeExport }: { characterId: string; characterName: string; beforeExport: () => Promise<void> }) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function onClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, []);
+
+  async function run(format: string) {
+    setBusy(format);
+    setError(null);
+    try {
+      await beforeExport(); // asegura que lo último que escribiste esté guardado antes de exportar
+      await api.download(`/characters/${characterId}/export?format=${format}`, `ficha-${characterName}.${format}`);
+      setOpen(false);
+    } catch (e: any) {
+      setError(e?.message ?? 'No se pudo exportar');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div ref={ref} className="relative">
+      <Button variant="ghost" size="sm" onClick={() => setOpen((o) => !o)} className="gap-1.5">
+        <Download className="h-3.5 w-3.5" /> Exportar <ChevronDown className="h-3 w-3" />
+      </Button>
+      {open && (
+        <div className="absolute right-0 z-20 mt-1 w-48 rounded-sm border border-ink-800 bg-ink-900 p-1 shadow-lg">
+          {EXPORT_FORMATS.map(({ format, label, Icon }) => (
+            <button
+              key={format}
+              type="button"
+              disabled={busy !== null}
+              onClick={() => run(format)}
+              className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm text-ink_text hover:bg-ink-800 disabled:opacity-60"
+            >
+              {busy === format ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Icon className="h-3.5 w-3.5 text-muted" />}
+              {label}
+            </button>
+          ))}
+          {error && <p className="px-2 py-1 text-xs text-brick-light">{error}</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function CharacterForm({
   character,
   onDeleted,
@@ -29,8 +121,37 @@ export function CharacterForm({
   const [form, setForm] = useState(character);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
   const timeout = useRef<ReturnType<typeof setTimeout>>();
+  const fileInput = useRef<HTMLInputElement>(null);
+  const formRef = useRef(form);
+  const [photoError, setPhotoError] = useState<string | null>(null);
 
   useEffect(() => setForm(character), [character]);
+  useEffect(() => {
+    formRef.current = form;
+  }, [form]);
+
+  async function onPhotoSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // permite volver a elegir el mismo archivo
+    if (!file) return;
+    setPhotoError(null);
+    if (!file.type.startsWith('image/')) return setPhotoError('El archivo tiene que ser una imagen.');
+    if (file.size > MAX_PHOTO_BYTES) return setPhotoError('La imagen pesa más de 10 MB.');
+    try {
+      update('photoUrl', await resizePhoto(file));
+    } catch {
+      setPhotoError('No se pudo procesar la imagen.');
+    }
+  }
+
+  /** Guarda ya mismo (sin esperar el debounce) lo que haya pendiente. */
+  async function flushSave() {
+    if (timeout.current) {
+      clearTimeout(timeout.current);
+      timeout.current = undefined;
+      await save(formRef.current);
+    }
+  }
 
   function update<K extends keyof Character>(key: K, value: Character[K]) {
     const next = { ...form, [key]: value };
@@ -83,14 +204,37 @@ export function CharacterForm({
     <div className="mx-auto max-w-2xl px-8 py-8">
       <div className="mb-6 flex items-start justify-between gap-4">
         <div className="flex items-center gap-3">
-          {form.photoUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={form.photoUrl} alt="" className="h-14 w-14 rounded-full object-cover" />
-          ) : (
-            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-ink-800 font-display text-xl text-muted">
-              {form.name.charAt(0).toUpperCase()}
-            </div>
-          )}
+          <div className="group relative h-14 w-14 shrink-0">
+            <button
+              type="button"
+              onClick={() => fileInput.current?.click()}
+              title={form.photoUrl ? 'Cambiar foto' : 'Agregar foto'}
+              className="relative block h-14 w-14 overflow-hidden rounded-full"
+            >
+              {form.photoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={form.photoUrl} alt="" className="h-14 w-14 object-cover" />
+              ) : (
+                <div className="flex h-14 w-14 items-center justify-center bg-ink-800 font-display text-xl text-muted">
+                  {form.name.charAt(0).toUpperCase()}
+                </div>
+              )}
+              <span className="absolute inset-0 flex items-center justify-center bg-black/55 opacity-0 transition-opacity group-hover:opacity-100">
+                <Camera className="h-4 w-4 text-white" />
+              </span>
+            </button>
+            {form.photoUrl && (
+              <button
+                type="button"
+                onClick={() => update('photoUrl', null)}
+                title="Quitar foto"
+                className="absolute -right-1 -top-1 hidden h-5 w-5 items-center justify-center rounded-full bg-ink-900 text-muted ring-1 ring-ink-800 hover:text-brick-light group-hover:flex"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            )}
+            <input ref={fileInput} type="file" accept="image/*" className="hidden" onChange={onPhotoSelected} />
+          </div>
           <div>
             <Input
               value={form.name}
@@ -100,6 +244,7 @@ export function CharacterForm({
             />
             <div className="mt-1 flex items-center gap-2 text-xs text-muted">
               <SaveIndicator state={saveState} />
+              {photoError && <span className="text-brick-light">{photoError}</span>}
             </div>
           </div>
         </div>
@@ -109,6 +254,7 @@ export function CharacterForm({
               <Skull className="h-3 w-3" /> Muerto
             </span>
           )}
+          <ExportMenu characterId={character.id} characterName={form.name} beforeExport={flushSave} />
           <Button variant="ghost" size="sm" onClick={remove}>
             <Trash2 className="h-3.5 w-3.5 text-muted hover:text-brick-light" />
           </Button>
