@@ -1,11 +1,12 @@
 import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { ValidationPipe } from '@nestjs/common';
 import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 import { CollaborationService } from './collaboration/collaboration.service';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
   // La foto del personaje viaja como data URL (ya reducida en el navegador); el límite por defecto (100kb) queda corto.
   app.useBodyParser('json', { limit: '3mb' });
